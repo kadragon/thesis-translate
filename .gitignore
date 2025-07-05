@@ -162,3 +162,5 @@ cython_debug/
 #.idea/
 
 *.txt
+glossary.json
+GEMINI.md

@@ -1,74 +1,74 @@
-# Academic Paper Translator
+# ScholarTranslate
 
-This project provides a tool for translating English academic papers into Korean, leveraging the OpenAI API.
+이 프로젝트는 OpenAI API를 활용하여 영어 학술 논문을 한국어로 번역하는 도구입니다.
 
-## Features
+## 주요 기능
 
-- **Text Preprocessing**: Cleans text copied from the clipboard, handling common issues like hyphens and extra spaces.
-- **Chunked Translation**: Translates large documents by splitting them into smaller, manageable chunks to optimize API usage.
-- **OpenAI API Integration**: Utilizes OpenAI's GPT models for high-quality, academic-style Korean translation.
-- **Customizable Glossary**: Supports a user-defined glossary (via `glossary.json`) to ensure consistent translation of specific academic terms.
-- **Output Formatting**: Formats the translated output for better readability.
+- **텍스트 전처리**: 클립보드에서 복사한 텍스트를 정리하고, 하이픈이나 불필요한 공백과 같은 일반적인 문제를 처리합니다.
+- **분할 번역**: 대용량 문서를 작고 관리하기 쉬운 청크로 분할하여 API 사용을 최적화하고 번역합니다.
+- **OpenAI API 연동**: OpenAI의 GPT 모델을 활용하여 고품질의 학술적인 한국어 번역을 제공합니다.
+- **사용자 정의 용어집**: `glossary.json` 파일을 통해 사용자 정의 용어집을 지원하여 특정 학술 용어의 일관된 번역을 보장합니다.
+- **출력 형식 지정**: 번역된 결과물의 가독성을 높이기 위해 형식을 지정합니다.
 
-## Project Structure
+## 프로젝트 구조
 
-- `main.py`: The main entry point for running the entire translation workflow.
+- `main.py`: 전체 번역 워크플로우를 실행하는 주요 진입점입니다.
 - `core/`:
-  - `file_translator.py`: Manages reading, chunking, and writing translated content.
-  - `openai_translator.py`: Handles communication with the OpenAI API for translation, including glossary integration.
+  - `file_translator.py`: 번역할 내용을 읽고, 청크로 분할하며, 번역된 내용을 작성하는 것을 관리합니다.
+  - `openai_translator.py`: 용어집 통합을 포함하여 OpenAI API와의 통신을 처리합니다.
 - `utils/`:
-  - `text_preprocessor.py`: Provides functionality for cleaning and preparing text from the clipboard.
-  - `format_output.py`: Contains utilities for post-processing the translated text (e.g., adding leading spaces).
-- `glossary.json`: A JSON file to define custom academic terms and their Korean translations.
-- `_trimed_text.txt`: An intermediate file storing the preprocessed English text.
-- `_result_text_ko.txt`: The final output file containing the Korean translation.
+  - `text_preprocessor.py`: 클립보드에서 텍스트를 정리하고 준비하는 기능을 제공합니다.
+  - `format_output.py`: 번역된 텍스트를 후처리하는 유틸리티(예: 선행 공백 추가)를 포함합니다.
+- `glossary.json`: 사용자 정의 학술 용어와 해당 한국어 번역을 정의하는 JSON 파일입니다.
+- `_trimed_text.txt`: 전처리된 영어 텍스트를 저장하는 중간 파일입니다.
+- `_result_text_ko.txt`: 한국어로 번역된 최종 결과물 파일입니다.
 
-## Setup and Usage
+## 설정 및 사용법
 
-### Prerequisites
+### 필수 요구 사항
 
 - Python 3.x
-- An OpenAI API Key
+- OpenAI API 키
 
-### Installation
+### 설치
 
-1. Clone the repository:
+1. 저장소를 클론합니다:
 
    ```bash
    git clone https://github.com/your-repo/academic-paper-translator.git
    cd academic-paper-translator
    ```
 
-2. Install the required Python packages:
+2. 필요한 Python 패키지를 설치합니다:
 
    ```bash
    pip install openai python-dotenv clipboard
    ```
 
-### Configuration
+### 설정
 
-1. **OpenAI API Key**: Create a `.env` file in the project root directory and add your OpenAI API key:
+1. **OpenAI API 키**: 프로젝트 루트 디렉토리에 `.env` 파일을 생성하고 OpenAI API 키를 추가합니다:
 
    ```
    OPENAI_API_KEY="your_openai_api_key_here"
    ```
 
-2. **Glossary**: Edit the `glossary.json` file in the project root to include any specific academic terms and their desired Korean translations. The format is an array of objects, each with `"term"` and `"translation"` keys.
+2. **용어집**: 프로젝트 루트에 있는 `glossary.json` 파일을 편집하여 특정 학술 용어와 원하는 한국어 번역을 포함시킵니다. 형식은 각 항목이 `"term"` 및 `"translation"` 키를 가진 객체 배열입니다.
 
-### Running the Translator
+### 번역기 실행
 
-1. Run the main script:
+1. 메인 스크립트를 실행합니다:
 
    ```bash
    python main.py
    ```
 
-2. Follow the prompts in the console. You will be asked to copy text to your clipboard and then the script will process and translate it.
+2. 콘솔의 지시에 따릅니다. 텍스트를 클립보드에 복사하도록 요청받으며, 스크립트가 이를 처리하고 번역합니다.
 
-## Contributing
+## 기여
 
-Feel free to fork the repository, open issues, or submit pull requests.
+자유롭게 저장소를 포크하고, 이슈를 열거나, 풀 리퀘스트를 제출해 주세요.
 
-## License
+## 라이선스
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+이 프로젝트는 MIT 라이선스에 따라 배포됩니다. 자세한 내용은 `LICENSE` 파일을 참조하세요.
