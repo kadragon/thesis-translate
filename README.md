@@ -32,38 +32,31 @@
 
 ### 설치
 
-1. 저장소를 클론합니다:
-
-   ```bash
-   git clone https://github.com/your-repo/academic-paper-translator.git
-   cd academic-paper-translator
-   ```
-
-2. 필요한 Python 패키지를 설치합니다:
-
-   ```bash
-   pip install openai python-dotenv clipboard
-   ```
+1.  저장소를 클론합니다:
+    ```bash
+    git clone https://github.com/your-repo/academic-paper-translator.git
+    cd academic-paper-translator
+    ```
+2.  필요한 Python 패키지를 설치합니다:
+    ```bash
+    pip install openai python-dotenv clipboard
+    ```
 
 ### 설정
 
-1. **OpenAI API 키**: 프로젝트 루트 디렉토리에 `.env` 파일을 생성하고 OpenAI API 키를 추가합니다:
-
-   ```
-   OPENAI_API_KEY="your_openai_api_key_here"
-   ```
-
-2. **용어집**: 프로젝트 루트에 있는 `glossary.json` 파일을 편집하여 특정 학술 용어와 원하는 한국어 번역을 포함시킵니다. 형식은 각 항목이 `"term"` 및 `"translation"` 키를 가진 객체 배열입니다.
+1.  **OpenAI API 키**: 프로젝트 루트 디렉토리에 `.env` 파일을 생성하고 OpenAI API 키를 추가합니다:
+    ```
+    OPENAI_API_KEY="your_openai_api_key_here"
+    ```
+2.  **용어집**: 프로젝트 루트에 있는 `glossary.json` 파일을 편집하여 특정 학술 용어와 원하는 한국어 번역을 포함시킵니다. 형식은 각 항목이 `"term"` 및 `"translation"` 키를 가진 객체 배열입니다.
 
 ### 번역기 실행
 
-1. 메인 스크립트를 실행합니다:
-
-   ```bash
-   python main.py
-   ```
-
-2. 콘솔의 지시에 따릅니다. 텍스트를 클립보드에 복사하도록 요청받으며, 스크립트가 이를 처리하고 번역합니다.
+1.  메인 스크립트를 실행합니다:
+    ```bash
+    python main.py
+    ```
+2.  콘솔의 지시에 따릅니다. 텍스트를 클립보드에 복사하도록 요청받으며, 스크립트가 이를 처리하고 번역합니다.
 
 ## 기여
 
