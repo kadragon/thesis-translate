@@ -1,6 +1,6 @@
 # ScholarTranslate
 
-이 프로젝트는 OpenAI API를 활용하여 영어 학술 논문을 한국어로 번역하는 도구입니다.
+이 프로젝트는 PDF파일의 OCR된 텍스트를 정리하고, OpenAI API를 활용하여 영어 학술 논문을 한국어로 번역하는 도구입니다.
 
 ## 주요 기능
 
@@ -20,8 +20,6 @@
   - `text_preprocessor.py`: 클립보드에서 텍스트를 정리하고 준비하는 기능을 제공합니다.
   - `format_output.py`: 번역된 텍스트를 후처리하는 유틸리티(예: 선행 공백 추가)를 포함합니다.
 - `glossary.json`: 사용자 정의 학술 용어와 해당 한국어 번역을 정의하는 JSON 파일입니다.
-- `_trimed_text.txt`: 전처리된 영어 텍스트를 저장하는 중간 파일입니다.
-- `_result_text_ko.txt`: 한국어로 번역된 최종 결과물 파일입니다.
 
 ## 설정 및 사용법
 
@@ -32,31 +30,57 @@
 
 ### 설치
 
-1.  저장소를 클론합니다:
-    ```bash
-    git clone https://github.com/your-repo/academic-paper-translator.git
-    cd academic-paper-translator
-    ```
-2.  필요한 Python 패키지를 설치합니다:
-    ```bash
-    pip install openai python-dotenv clipboard
-    ```
+1. 저장소를 클론합니다:
+
+   ```bash
+   git clone https://github.com/your-repo/academic-paper-translator.git
+   cd academic-paper-translator
+   ```
+
+2. 필요한 Python 패키지를 설치합니다:
+
+   ```bash
+   uv sync
+   ```
 
 ### 설정
 
-1.  **OpenAI API 키**: 프로젝트 루트 디렉토리에 `.env` 파일을 생성하고 OpenAI API 키를 추가합니다:
-    ```
-    OPENAI_API_KEY="your_openai_api_key_here"
-    ```
-2.  **용어집**: 프로젝트 루트에 있는 `glossary.json` 파일을 편집하여 특정 학술 용어와 원하는 한국어 번역을 포함시킵니다. 형식은 각 항목이 `"term"` 및 `"translation"` 키를 가진 객체 배열입니다.
+1. **OpenAI API 키**: 프로젝트 루트 디렉토리에 `.env` 파일을 생성하고 OpenAI API 키를 추가합니다:
+
+   ```
+   OPENAI_API_KEY="your_openai_api_key_here"
+   ```
+
+2. **용어집**: 프로젝트 루트에 있는 `glossary.json` 파일을 편집하여 특정 학술 용어와 원하는 한국어 번역을 포함시킵니다. 형식은 각 항목이 `"term"` 및 `"translation"` 키를 가진 객체 배열입니다.
 
 ### 번역기 실행
 
-1.  메인 스크립트를 실행합니다:
-    ```bash
-    python main.py
-    ```
-2.  콘솔의 지시에 따릅니다. 텍스트를 클립보드에 복사하도록 요청받으며, 스크립트가 이를 처리하고 번역합니다.
+1. 메인 스크립트를 실행합니다:
+
+   ```bash
+   uv run main.py
+   ```
+
+2. 콘솔의 지시에 따릅니다. 텍스트를 클립보드에서 복사한 후, 스크립트가 이를 처리하고 번역합니다.
+
+- PDF 등 파일에서 텍스트를 복사한 뒤, `Enter`를 눌러 입력합니다.
+- 문단이 페이지 분할 등으로 끊어진 경우
+  - 첫 번째 문단을 붙여넣고 `a`를 입력한 후 `Enter`를 누릅니다.  
+     (이때 바로 저장되지 않고, 메모리에 임시 저장됩니다.)
+  - 이어서 다음 문단을 복사해 붙여넣고 `Enter`를 누릅니다.  
+     (이 과정에서 두 단락이 자동으로 연결되어 하나의 문장으로 text 파일에 저장됩니다.)
+  - **단락을 연결하려면 반드시 `a` 입력 후 `Enter`를 먼저 눌러야 합니다.**
+  - `Enter`만 누를 경우 바로 저장되어, 단락 연결이 되지 않습니다.
+- 페이지 번호가 필요한 경우
+  - 페이지 번호만 입력하고 `Enter`를 누르면 해당 번호가 그대로 저장됩니다.
+
+---
+
+### 요약
+
+- 일반 입력: 붙여넣기 → Enter
+- 단락 연결: 붙여넣기 → `a` → Enter → 다음 단락 붙여넣기 → Enter
+- 페이지 번호 입력: 페이지 번호 → Enter
 
 ## 기여
 
