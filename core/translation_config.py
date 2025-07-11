@@ -2,12 +2,13 @@ import json
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
+import config
 
 
 load_dotenv()
 
 
-class OpenAITranslator:
+class TranslationConfig:
     """
     OpenAI API를 활용하여 논문 텍스트를 한국어로 번역하는 클래스.
     Batch API 요청 생성을 위한 설정(프롬프트, 모델 등)을 제공합니다.
@@ -32,7 +33,7 @@ Begin translating:
 {text}
 """
 
-    def __init__(self, model: str = "gpt-4.1-mini", temperature: float = 0.1, glossary_path: str = 'glossary.json'):
+    def __init__(self, model: str = config.OPENAI_MODEL, temperature: float = config.TEMPERATURE, glossary_path: str = config.GLOSSARY_FILE):
         """
         Args:
             model (str): 사용할 OpenAI 모델명.
