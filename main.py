@@ -1,7 +1,6 @@
 
 import logging
-from core.file_translator import FileTranslator
-from core.openai_translator import OpenAITranslator
+from core.batch_translator import BatchTranslator
 from utils.text_preprocessor import TextPreprocessor
 from utils.format_output import add_leading_spaces_to_file
 
@@ -13,15 +12,14 @@ def main():
     # 2. 번역
     logging.basicConfig(level=logging.INFO,
                         format='%(asctime)s %(levelname)s: %(message)s')
-    translator = OpenAITranslator(glossary_path='glossary.json')
-    file_translator = FileTranslator(
-        input_file=TextPreprocessor.FILE_NAME,
-        translator=translator.translate
+    
+    batch_translator = BatchTranslator(
+        input_file=TextPreprocessor.FILE_NAME
     )
-    file_translator.buffer_translate_and_save()
+    batch_translator.translate()
 
     # 3. 출력 포맷팅
-    add_leading_spaces_to_file(file_translator.output_file)
+    add_leading_spaces_to_file(batch_translator.output_file)
 
     print("모든 작업이 완료되었습니다.")
 

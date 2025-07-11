@@ -10,6 +10,7 @@ load_dotenv()
 class OpenAITranslator:
     """
     OpenAI API를 활용하여 논문 텍스트를 한국어로 번역하는 클래스.
+    Batch API 요청 생성을 위한 설정(프롬프트, 모델 등)을 제공합니다.
     """
 
     PROMPT_TEMPLATE = """
@@ -57,37 +58,3 @@ Begin translating:
         for item in data:
             glossary_str += f"- {item['term']} > {item['translation']}\n"
         return glossary_str.strip()
-
-    def translate(self, text: str) -> str:
-        """
-        지정한 논문 텍스트를 한국어로 번역.
-
-        Args:
-            text (str): 번역할 논문 텍스트.
-
-        Returns:
-            str: 번역된 텍스트 (한국어)
-        Raises:
-            RuntimeError: 번역 실패 또는 OpenAI API 에러, 또는 content가 None일 때 예외 발생
-        """
-        prompt = self.PROMPT_TEMPLATE.format(glossary=self.glossary, text=text)
-        try:
-            # Streaming response 처리
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=self.temperature,
-                stream=True
-            )
-            content = ""
-            for chunk in response:
-                delta = getattr(chunk.choices[0].delta, "content", None)
-                if delta:
-                    print(delta, end="", flush=True)  # 스트리밍 텍스트 console 출력
-                    content += delta
-            print()  # 스트리밍 완료 후 줄바꿈
-            if not content.strip():
-                raise RuntimeError("번역 결과가 없습니다. (스트리밍 응답 content=None)")
-            return content
-        except Exception as e:
-            raise RuntimeError(f"번역 요청 실패: {e}")
