@@ -47,7 +47,7 @@
 
 1. **OpenAI API 키**: 프로젝트 루트 디렉토리에 `.env` 파일을 생성하고 OpenAI API 키를 추가합니다:
 
-   ```
+   ```txt
    OPENAI_API_KEY="your_openai_api_key_here"
    ```
 
