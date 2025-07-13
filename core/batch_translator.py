@@ -16,7 +16,7 @@ class BatchTranslator:
         self.output_file = output_file
         self.max_token_length = max_token_length
         self.config = TranslationConfig()
-        self.encoding = tiktoken.encoding_for_model(self.config.model)
+        self.encoding = tiktoken.get_encoding('cl100k_base')
 
     def _count_tokens(self, text: str) -> int:
         return len(self.encoding.encode(text))

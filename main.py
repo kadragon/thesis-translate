@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 from dotenv import load_dotenv
-from core.batch_translator import BatchTranslator
+from core.normal_translator import NormalTranslator
 from utils.text_preprocessor import TextPreprocessor
 import config
 
@@ -25,13 +25,13 @@ def main():
 
     # 2. 번역
     try:
-        batch_translator = BatchTranslator(
+        normal_translator = NormalTranslator(
             input_file=config.INPUT_FILE
         )
-        batch_translator.translate()
+        normal_translator.translate()
 
         # 3. 출력 포맷팅
-        batch_translator.format_output()
+        normal_translator.format_output()
 
         print("모든 작업이 완료되었습니다.")
     except Exception as e:
