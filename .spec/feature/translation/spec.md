@@ -56,4 +56,3 @@ Trace-To:
 - tests/test_normal_translator.py::TestTranslator::test_format_output (TEST-TRANSLATION-001-AC8)
 - tests/test_normal_translator.py::TestTranslator::test_translate_file_not_found (TEST-TRANSLATION-001-AC9)
 - tests/test_normal_translator.py::TestTranslator::test_translate_metrics_logging (TEST-TRANSLATION-001-AC10)
-- tests/test_normal_translator.py::TestTranslator::test_translate_metrics_logging (TEST-TRANSLATION-001-AC10)

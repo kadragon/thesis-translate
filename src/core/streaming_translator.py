@@ -168,6 +168,7 @@ class StreamingTranslator:
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC7
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC9
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC10
+    # Trace: SPEC-REFACTOR-DRY-001, AC-1, AC-2
     def translate(self) -> TranslationRunResult:
         """Translate the input file and write results while tracking metrics."""
         start_time = time.perf_counter()
@@ -179,14 +180,16 @@ class StreamingTranslator:
             logger.exception("입력 파일을 찾을 수 없습니다: %s", self.input_file)
             raise
 
-        total_chunks = self._calculate_total_chunks(lines)
+        # Materialize chunks for progress tracking
+        chunks = list(self.chunk_generator(lines))
+        total_chunks = len(chunks)
         logger.info("총 %d개의 번역 청크를 처리합니다.", total_chunks)
 
         translated_content: list[str] = []
         successes = 0
         failures = 0
 
-        for chunk_index, chunk_text in self.chunk_generator(lines):
+        for chunk_index, chunk_text in chunks:
             logger.info("processing chunk=%d/%d", chunk_index, total_chunks)
             translation = self._translate_chunk(chunk_index, chunk_text)
             if translation:
@@ -217,26 +220,3 @@ class StreamingTranslator:
     def format_output(self) -> None:
         """Format the output file with consistent indentation."""
         OutputFormatter.format_output(self.output_file)
-
-    def _calculate_total_chunks(self, lines: list[str]) -> int:
-        """Determine total chunk count without materialising chunk texts."""
-        buffer = ""
-        total = 0
-
-        for line in lines:
-            candidate = buffer + line if buffer else line
-            token_count = self.token_counter.count_tokens(candidate)
-
-            if buffer and token_count > self.max_token_length:
-                total += 1
-                buffer = line
-            elif not buffer and token_count > self.max_token_length:
-                total += 1
-                buffer = ""
-            else:
-                buffer = candidate
-
-        if buffer:
-            total += 1
-
-        return total
