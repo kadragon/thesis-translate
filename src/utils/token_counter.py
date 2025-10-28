@@ -1,4 +1,5 @@
 """Token counting utility for text chunking."""
+# GENERATED FROM SPEC-TOKEN-COUNTER-001
 
 import threading
 
@@ -18,6 +19,11 @@ class TokenCounter:
     _encoding: tiktoken.Encoding | None = None
     _lock = threading.Lock()
 
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC1
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC2
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC3
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC8
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC11
     def __new__(cls) -> "TokenCounter":
         """Create or return the singleton instance with thread-safe initialization.
 
@@ -40,6 +46,12 @@ class TokenCounter:
         """Initialization is handled in __new__ to ensure it runs only once."""
         # No-op: all initialization happens in __new__
 
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC4
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC5
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC6
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC7
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC9
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC10
     def count_tokens(self, text: str) -> int:
         """Count the number of tokens in the given text.
 

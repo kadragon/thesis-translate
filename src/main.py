@@ -36,10 +36,22 @@ def main() -> None:
     # 2. 번역
     try:
         translator = StreamingTranslator(input_file=config.INPUT_FILE)
-        translator.translate()
+        metrics = translator.translate()
 
         # 3. 출력 포맷팅
         translator.format_output()
+
+        logger.info(
+            "번역 요약 - 성공: %d개, 실패: %d개, 소요 시간: %.2f초",
+            metrics.successes,
+            metrics.failures,
+            metrics.duration_seconds,
+        )
+        if metrics.failures > 0:
+            logger.warning(
+                "일부 번역 청크가 실패했습니다. 로그를 확인하고 재시도를 고려하세요."
+            )
+            sys.exit(2)
 
         logger.info("모든 작업이 완료되었습니다.")
     except Exception:

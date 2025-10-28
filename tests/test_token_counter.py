@@ -17,6 +17,7 @@ class TestTokenCounter:
         TokenCounter._instance = None
         TokenCounter._encoding = None
 
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC1
     def test_singleton_returns_same_instance(self) -> None:
         """AC-1: GIVEN TokenCounter WHEN creating multiple instances THEN same
         object is returned."""
@@ -28,6 +29,7 @@ class TestTokenCounter:
         assert counter1 is counter2
         assert id(counter1) == id(counter2)
 
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC2
     def test_encoding_initialized_on_first_instantiation(self) -> None:
         """AC-2: GIVEN TokenCounter WHEN first instance is created THEN encoding
         is initialized."""
@@ -38,6 +40,7 @@ class TestTokenCounter:
         assert TokenCounter._encoding is not None
         assert counter._encoding is not None
 
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC3
     def test_encoding_not_reinitialized(self) -> None:
         """AC-3: GIVEN TokenCounter singleton WHEN multiple instances are created
         THEN encoding is not reloaded."""
@@ -52,6 +55,7 @@ class TestTokenCounter:
         # Then
         assert encoding_id_1 == encoding_id_2
 
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC4
     def test_count_tokens_basic(self) -> None:
         """AC-4: GIVEN text WHEN counting tokens THEN correct number is returned."""
         # Given
@@ -64,6 +68,7 @@ class TestTokenCounter:
         assert isinstance(token_count, int)
         assert token_count > 0
 
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC5
     def test_count_tokens_empty_string(self) -> None:
         """AC-5: GIVEN empty string WHEN counting tokens THEN zero is returned."""
         # Given
@@ -75,6 +80,7 @@ class TestTokenCounter:
         # Then
         assert token_count == 0
 
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC6
     def test_count_tokens_long_text(self) -> None:
         """AC-6: GIVEN long text WHEN counting tokens THEN returns reasonable count."""
         # Given
@@ -87,6 +93,7 @@ class TestTokenCounter:
         # Then
         assert token_count > MIN_TOKEN_COUNT  # Should be significantly more tokens
 
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC7
     def test_count_tokens_consistency(self) -> None:
         """AC-7: GIVEN same text WHEN counting tokens multiple times THEN results
         are consistent."""
@@ -101,6 +108,7 @@ class TestTokenCounter:
         # Then
         assert count1 == count2
 
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC8
     def test_thread_safe_initialization(self) -> None:
         """AC-8: GIVEN concurrent threads WHEN initializing TokenCounter THEN only
         one instance is created."""
@@ -129,6 +137,7 @@ class TestTokenCounter:
         assert all(instance is instances[0] for instance in instances)
         assert all(id(instance) == id(instances[0]) for instance in instances)
 
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC9
     def test_count_tokens_with_special_characters(self) -> None:
         """AC-9: GIVEN text with special characters WHEN counting tokens THEN
         handles correctly."""
@@ -142,6 +151,7 @@ class TestTokenCounter:
         assert isinstance(token_count, int)
         assert token_count > 0
 
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC10
     def test_count_tokens_with_unicode(self) -> None:
         """AC-10: GIVEN text with unicode characters WHEN counting tokens THEN
         handles correctly."""
@@ -155,6 +165,7 @@ class TestTokenCounter:
         assert isinstance(token_count, int)
         assert token_count > 0
 
+    # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC11
     def test_multiple_counters_share_encoding(self) -> None:
         """AC-11: GIVEN multiple counter instances WHEN using different instances
         THEN encoding is shared."""
