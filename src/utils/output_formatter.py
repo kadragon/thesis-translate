@@ -44,4 +44,4 @@ class OutputFormatter:
         with output_path.open("w", encoding="utf-8") as f:
             f.writelines(new_lines)
 
-        logger.info(f"Output formatting completed for {file_path}")
+        logger.info("Output formatting completed for %s", file_path)

@@ -1,16 +1,17 @@
 # GENERATED FROM SPEC-TRANSLATION-001
 
-import pytest
 from unittest.mock import Mock, patch
-from pathlib import Path
+
+import pytest
 
 from src.core.streaming_translator import StreamingTranslator
 
 
 class TestTranslator:
     @patch("src.core.streaming_translator.OpenAI")
-    def test_translate_chunk_success(self, mock_openai_class, tmp_path):
-        """AC-2: GIVEN text chunk WHEN translating THEN OpenAI API is called with prompt template"""
+    def test_translate_chunk_success(self, mock_openai_class):
+        """AC-2: GIVEN text chunk WHEN translating THEN OpenAI API is called with
+        prompt template"""
         # Given
         mock_client = Mock()
         mock_openai_class.return_value = mock_client
@@ -25,7 +26,9 @@ class TestTranslator:
         config.glossary = "glossary"
         config.model = "gpt-4"
         config.temperature = 0.5
-        with patch("src.core.streaming_translator.TranslationConfig", return_value=config):
+        with patch(
+            "src.core.streaming_translator.TranslationConfig", return_value=config
+        ):
             translator = StreamingTranslator(input_file="dummy")
 
         # When
@@ -36,7 +39,7 @@ class TestTranslator:
         mock_client.chat.completions.create.assert_called_once()
 
     @patch("src.core.streaming_translator.OpenAI")
-    def test_translate_chunk_api_error(self, mock_openai_class, tmp_path):
+    def test_translate_chunk_api_error(self, mock_openai_class):
         """Test handling of API errors"""
         # Given
         mock_client = Mock()
@@ -44,7 +47,9 @@ class TestTranslator:
         mock_client.chat.completions.create.side_effect = Exception("API Error")
 
         config = Mock()
-        with patch("src.core.streaming_translator.TranslationConfig", return_value=config):
+        with patch(
+            "src.core.streaming_translator.TranslationConfig", return_value=config
+        ):
             translator = StreamingTranslator(input_file="dummy")
 
         # When
@@ -53,11 +58,13 @@ class TestTranslator:
         # Then
         assert result == ""
 
-    def test_translate_file_not_found(self, tmp_path):
+    def test_translate_file_not_found(self):
         """Test handling of missing input file"""
         # Given
         config = Mock()
-        with patch("src.core.streaming_translator.TranslationConfig", return_value=config):
+        with patch(
+            "src.core.streaming_translator.TranslationConfig", return_value=config
+        ):
             translator = StreamingTranslator(input_file="nonexistent.txt")
 
         # When/Then
@@ -66,7 +73,8 @@ class TestTranslator:
 
     @patch("src.core.streaming_translator.OpenAI")
     def test_translate_success(self, mock_openai_class, tmp_path):
-        """AC-1 & AC-3: GIVEN input file WHEN translating THEN text is split into chunks and translated"""
+        """AC-1 & AC-3: GIVEN input file WHEN translating THEN text is split into
+        chunks and translated"""
         # Given
         input_file = tmp_path / "input.txt"
         output_file = tmp_path / "output.txt"
@@ -85,7 +93,9 @@ class TestTranslator:
         config.glossary = ""
         config.model = "gpt-4"
         config.temperature = 0.5
-        with patch("src.core.streaming_translator.TranslationConfig", return_value=config):
+        with patch(
+            "src.core.streaming_translator.TranslationConfig", return_value=config
+        ):
             translator = StreamingTranslator(
                 input_file=str(input_file), output_file=str(output_file)
             )
@@ -105,8 +115,12 @@ class TestTranslator:
         output_file.write_text("Line 1\n\nLine 2\n  Already indented\n")
 
         config = Mock()
-        with patch("src.core.streaming_translator.TranslationConfig", return_value=config):
-            translator = StreamingTranslator(input_file="dummy", output_file=str(output_file))
+        with patch(
+            "src.core.streaming_translator.TranslationConfig", return_value=config
+        ):
+            translator = StreamingTranslator(
+                input_file="dummy", output_file=str(output_file)
+            )
 
         # When
         translator.format_output()

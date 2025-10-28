@@ -1,8 +1,8 @@
 # Test main entry point
 
-import pytest
-from unittest.mock import patch, MagicMock
-import sys
+from unittest.mock import MagicMock, patch
+
+from src.main import main
 
 
 class TestMain:
@@ -19,8 +19,6 @@ class TestMain:
         mock_translator_class.return_value = mock_translator
 
         # When
-        from src.main import main
-
         main()
 
         # Then
@@ -31,14 +29,14 @@ class TestMain:
         mock_translator.format_output.assert_called_once()
 
     @patch.dict("os.environ", {}, clear=True)
-    @patch("src.main.TextPreprocessor")  # Prevent run() from being called
+    @patch("src.main.TextPreprocessor")
     @patch("sys.exit")
     @patch("src.main.logger")
-    def test_main_missing_api_key(self, mock_logger, mock_exit, mock_preprocessor_class):
+    def test_main_missing_api_key(
+        self, mock_logger, mock_exit, _mock_preprocessor_class
+    ):
         """Test main with missing API key"""
         # When
-        from src.main import main
-
         main()
 
         # Then
@@ -63,8 +61,6 @@ class TestMain:
         mock_translator_class.return_value = mock_translator
 
         # When
-        from src.main import main
-
         main()
 
         # Then

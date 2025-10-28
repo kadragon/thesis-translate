@@ -41,9 +41,9 @@ def main() -> None:
         # 3. 출력 포맷팅
         translator.format_output()
 
-        print("모든 작업이 완료되었습니다.")
-    except Exception as e:
-        logger.exception(f"번역 과정에서 예상치 못한 오류가 발생했습니다: {e}")
+        logger.info("모든 작업이 완료되었습니다.")
+    except Exception:
+        logger.exception("번역 과정에서 예상치 못한 오류가 발생했습니다")
         sys.exit(1)
 
 

@@ -13,4 +13,4 @@ def test_config_constants() -> None:
     assert hasattr(config, "GLOSSARY_FILE")
 
     assert isinstance(config.MAX_TOKEN_LENGTH, int)
-    assert isinstance(config.TEMPERATURE, (int, float))
+    assert isinstance(config.TEMPERATURE, int | float)

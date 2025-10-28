@@ -1,8 +1,11 @@
 # GENERATED FROM SPEC-TOKEN-COUNTER-001
 
 import threading
-import pytest
+
 from src.utils.token_counter import TokenCounter
+
+MIN_TOKEN_COUNT = 100
+THREAD_COUNT = 10
 
 
 class TestTokenCounter:
@@ -15,7 +18,8 @@ class TestTokenCounter:
         TokenCounter._encoding = None
 
     def test_singleton_returns_same_instance(self) -> None:
-        """AC-1: GIVEN TokenCounter WHEN creating multiple instances THEN same object is returned."""
+        """AC-1: GIVEN TokenCounter WHEN creating multiple instances THEN same
+        object is returned."""
         # When
         counter1 = TokenCounter()
         counter2 = TokenCounter()
@@ -25,7 +29,8 @@ class TestTokenCounter:
         assert id(counter1) == id(counter2)
 
     def test_encoding_initialized_on_first_instantiation(self) -> None:
-        """AC-2: GIVEN TokenCounter WHEN first instance is created THEN encoding is initialized."""
+        """AC-2: GIVEN TokenCounter WHEN first instance is created THEN encoding
+        is initialized."""
         # When
         counter = TokenCounter()
 
@@ -34,13 +39,14 @@ class TestTokenCounter:
         assert counter._encoding is not None
 
     def test_encoding_not_reinitialized(self) -> None:
-        """AC-3: GIVEN TokenCounter singleton WHEN multiple instances are created THEN encoding is not reloaded."""
+        """AC-3: GIVEN TokenCounter singleton WHEN multiple instances are created
+        THEN encoding is not reloaded."""
         # Given
-        counter1 = TokenCounter()
+        TokenCounter()
         encoding_id_1 = id(TokenCounter._encoding)
 
         # When
-        counter2 = TokenCounter()
+        TokenCounter()
         encoding_id_2 = id(TokenCounter._encoding)
 
         # Then
@@ -79,10 +85,11 @@ class TestTokenCounter:
         token_count = counter.count_tokens(long_text)
 
         # Then
-        assert token_count > 100  # Should be significantly more tokens
+        assert token_count > MIN_TOKEN_COUNT  # Should be significantly more tokens
 
     def test_count_tokens_consistency(self) -> None:
-        """AC-7: GIVEN same text WHEN counting tokens multiple times THEN results are consistent."""
+        """AC-7: GIVEN same text WHEN counting tokens multiple times THEN results
+        are consistent."""
         # Given
         counter = TokenCounter()
         text = "The quick brown fox jumps over the lazy dog"
@@ -95,7 +102,8 @@ class TestTokenCounter:
         assert count1 == count2
 
     def test_thread_safe_initialization(self) -> None:
-        """AC-8: GIVEN concurrent threads WHEN initializing TokenCounter THEN only one instance is created."""
+        """AC-8: GIVEN concurrent threads WHEN initializing TokenCounter THEN only
+        one instance is created."""
         # Reset for this test
         TokenCounter._instance = None
         TokenCounter._encoding = None
@@ -117,12 +125,13 @@ class TestTokenCounter:
             thread.join()
 
         # Then: All instances should be the same object
-        assert len(instances) == 10
+        assert len(instances) == THREAD_COUNT
         assert all(instance is instances[0] for instance in instances)
         assert all(id(instance) == id(instances[0]) for instance in instances)
 
     def test_count_tokens_with_special_characters(self) -> None:
-        """AC-9: GIVEN text with special characters WHEN counting tokens THEN handles correctly."""
+        """AC-9: GIVEN text with special characters WHEN counting tokens THEN
+        handles correctly."""
         # Given
         counter = TokenCounter()
 
@@ -134,7 +143,8 @@ class TestTokenCounter:
         assert token_count > 0
 
     def test_count_tokens_with_unicode(self) -> None:
-        """AC-10: GIVEN text with unicode characters WHEN counting tokens THEN handles correctly."""
+        """AC-10: GIVEN text with unicode characters WHEN counting tokens THEN
+        handles correctly."""
         # Given
         counter = TokenCounter()
 
@@ -146,7 +156,8 @@ class TestTokenCounter:
         assert token_count > 0
 
     def test_multiple_counters_share_encoding(self) -> None:
-        """AC-11: GIVEN multiple counter instances WHEN using different instances THEN encoding is shared."""
+        """AC-11: GIVEN multiple counter instances WHEN using different instances
+        THEN encoding is shared."""
         # Given
         counter1 = TokenCounter()
         text = "Test text"

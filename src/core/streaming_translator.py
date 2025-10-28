@@ -29,8 +29,8 @@ class StreamingTranslator:
 
         Args:
             input_file: Path to the input text file.
-            output_file: Path to the output translation file (default: from config).
-            max_token_length: Maximum tokens per translation chunk (default: from config).
+            output_file: Path to output translation file (default: from config).
+            max_token_length: Max tokens per translation chunk (default: config).
         """
         self.client: OpenAI = OpenAI()
         self.input_file: str = input_file
@@ -58,8 +58,8 @@ class StreamingTranslator:
                 temperature=self.config.temperature,
             )
             return str(response.choices[0].message.content or "")
-        except Exception as e:
-            logger.exception(f"OpenAI API 호출 중 오류 발생: {e}")
+        except Exception:
+            logger.exception("OpenAI API 호출 중 오류 발생")
             return ""
 
     def translate(self) -> None:
@@ -74,7 +74,7 @@ class StreamingTranslator:
             with Path(self.input_file).open(encoding="utf-8") as f:
                 lines = f.readlines()
         except FileNotFoundError:
-            logger.exception(f"입력 파일을 찾을 수 없습니다: {self.input_file}")
+            logger.exception("입력 파일을 찾을 수 없습니다: %s", self.input_file)
             raise
 
         # Calculate total chunks
@@ -92,20 +92,19 @@ class StreamingTranslator:
         if temp_buffer:
             total_chunks += 1
 
-        logger.info(f"총 {total_chunks}개의 번역 청크를 처리합니다.")
+        logger.info("총 %d개의 번역 청크를 처리합니다.", total_chunks)
 
         # Translate chunks
         buffer = ""
         translated_content: list[str] = []
         current_chunk = 0
         for line in lines:
-            if (
-                self.token_counter.count_tokens(buffer + line)
-                > self.max_token_length
-            ):
+            if self.token_counter.count_tokens(buffer + line) > self.max_token_length:
                 if buffer:
                     current_chunk += 1
-                    logger.info(f"번역 청크 {current_chunk}/{total_chunks} 처리 중...")
+                    logger.info(
+                        "번역 청크 %d/%d 처리 중...", current_chunk, total_chunks
+                    )
                     translated_text = self._translate_chunk(buffer)
                     if translated_text:
                         translated_content.append(translated_text)
@@ -114,7 +113,7 @@ class StreamingTranslator:
 
         if buffer:
             current_chunk += 1
-            logger.info(f"번역 청크 {current_chunk}/{total_chunks} 처리 중...")
+            logger.info("번역 청크 %d/%d 처리 중...", current_chunk, total_chunks)
             translated_text = self._translate_chunk(buffer)
             if translated_text:
                 translated_content.append(translated_text)
@@ -124,7 +123,7 @@ class StreamingTranslator:
             f.writelines(content + "\n\n" for content in translated_content)
 
         logger.info(
-            f"번역이 완료되었습니다. 결과가 {self.output_file}에 저장되었습니다."
+            "번역이 완료되었습니다. 결과가 %s에 저장되었습니다.", self.output_file
         )
 
     def format_output(self) -> None:
