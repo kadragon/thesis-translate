@@ -1,10 +1,9 @@
 import json
 import logging
-import os
 from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
-from openai import OpenAI
 
 from src import config
 
@@ -14,12 +13,12 @@ logger = logging.getLogger(__name__)
 
 
 class TranslationConfig:
-    """
-    OpenAI API를 활용하여 논문 텍스트를 한국어로 번역하는 클래스.
-    Batch API 요청 생성을 위한 설정(프롬프트, 모델 등)을 제공합니다.
+    """Configuration for academic paper translation using OpenAI API.
+
+    Provides prompt template, model settings, and glossary for translation tasks.
     """
 
-    PROMPT_TEMPLATE = """
+    PROMPT_TEMPLATE: str = """
 You are a professional translator tasked with translating the following academic research paper into Korean. Please adhere to the following instructions:
 
 - Maintain the formal tone and academic style typical of research papers.
@@ -43,28 +42,39 @@ Begin translating:
         model: str = config.OPENAI_MODEL,
         temperature: float = config.TEMPERATURE,
         glossary_path: str = config.GLOSSARY_FILE,
-    ):
-        """
+    ) -> None:
+        """Initialize translation configuration.
+
         Args:
-            model (str): 사용할 OpenAI 모델명.
-            temperature (float): 생성 temperature 값.
-            glossary_path (str): 번역 용어집 JSON 파일 경로.
+            model: OpenAI model name (default: from config).
+            temperature: Temperature parameter for generation (default: from config).
+            glossary_path: Path to glossary JSON file (default: from config).
+
+        Raises:
+            FileNotFoundError: If glossary file is not found.
         """
-        self.client = OpenAI()
-        self.model = model
-        self.temperature = temperature
-        self.glossary = self._load_glossary_from_json(glossary_path)
+        self.model: str = model
+        self.temperature: float = temperature
+        self.glossary: str = self._load_glossary_from_json(glossary_path)
 
     def _load_glossary_from_json(self, glossary_path: str) -> str:
-        """
-        JSON 파일에서 용어집을 로드하고 PROMPT_TEMPLATE에 맞는 문자열 형식으로 변환합니다.
+        """Load glossary from JSON file and format for prompt template.
+
+        Args:
+            glossary_path: Path to the glossary JSON file.
+
+        Returns:
+            Formatted glossary string for inclusion in prompts.
+
+        Raises:
+            FileNotFoundError: If glossary file does not exist.
         """
         if not Path(glossary_path).exists():
             msg = f"Glossary file not found at {glossary_path}"
             raise FileNotFoundError(msg)
 
         with Path(glossary_path).open(encoding="utf-8") as f:
-            data = json.load(f)
+            data: list[dict[str, Any]] = json.load(f)
 
         glossary_str = ""
         for item in data:

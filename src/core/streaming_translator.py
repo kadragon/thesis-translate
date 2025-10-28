@@ -1,35 +1,53 @@
+"""Translation module for academic papers using OpenAI Chat Completions API."""
+
 import logging
-import os
-import time
 from pathlib import Path
 
-import tiktoken
 from openai import OpenAI
 
 from src import config
 from src.core.translation_config import TranslationConfig
+from src.utils.output_formatter import OutputFormatter
+from src.utils.token_counter import TokenCounter
 
 logger = logging.getLogger(__name__)
 
 
-class NormalTranslator:
+class StreamingTranslator:
+    """Translator for academic papers using OpenAI Chat Completions API.
+
+    Handles text chunking, API calls, and output formatting for paper translation.
+    """
+
     def __init__(
         self,
         input_file: str,
         output_file: str = config.OUTPUT_FILE,
         max_token_length: int = config.MAX_TOKEN_LENGTH,
-    ):
-        self.client = OpenAI()
-        self.input_file = input_file
-        self.output_file = output_file
-        self.max_token_length = max_token_length
-        self.config = TranslationConfig()
-        self.encoding = tiktoken.get_encoding("cl100k_base")
+    ) -> None:
+        """Initialize the translator.
 
-    def _count_tokens(self, text: str) -> int:
-        return len(self.encoding.encode(text))
+        Args:
+            input_file: Path to the input text file.
+            output_file: Path to the output translation file (default: from config).
+            max_token_length: Maximum tokens per translation chunk (default: from config).
+        """
+        self.client: OpenAI = OpenAI()
+        self.input_file: str = input_file
+        self.output_file: str = output_file
+        self.max_token_length: int = max_token_length
+        self.config: TranslationConfig = TranslationConfig()
+        self.token_counter: TokenCounter = TokenCounter()
 
     def _translate_chunk(self, text: str) -> str:
+        """Translate a single chunk of text using OpenAI API.
+
+        Args:
+            text: Text chunk to translate.
+
+        Returns:
+            Translated text, or empty string if API call fails.
+        """
         prompt = self.config.PROMPT_TEMPLATE.format(
             glossary=self.config.glossary, text=text
         )
@@ -44,7 +62,14 @@ class NormalTranslator:
             logger.exception(f"OpenAI API 호출 중 오류 발생: {e}")
             return ""
 
-    def translate(self):
+    def translate(self) -> None:
+        """Translate the input file and save results to output file.
+
+        The text is chunked based on token count to respect API limits.
+
+        Raises:
+            FileNotFoundError: If input file does not exist.
+        """
         try:
             with Path(self.input_file).open(encoding="utf-8") as f:
                 lines = f.readlines()
@@ -56,7 +81,10 @@ class NormalTranslator:
         total_chunks = 0
         temp_buffer = ""
         for line in lines:
-            if self._count_tokens(temp_buffer + line) > self.max_token_length:
+            if (
+                self.token_counter.count_tokens(temp_buffer + line)
+                > self.max_token_length
+            ):
                 if temp_buffer:
                     total_chunks += 1
                 temp_buffer = ""
@@ -66,11 +94,15 @@ class NormalTranslator:
 
         logger.info(f"총 {total_chunks}개의 번역 청크를 처리합니다.")
 
+        # Translate chunks
         buffer = ""
-        translated_content = []
+        translated_content: list[str] = []
         current_chunk = 0
         for line in lines:
-            if self._count_tokens(buffer + line) > self.max_token_length:
+            if (
+                self.token_counter.count_tokens(buffer + line)
+                > self.max_token_length
+            ):
                 if buffer:
                     current_chunk += 1
                     logger.info(f"번역 청크 {current_chunk}/{total_chunks} 처리 중...")
@@ -87,6 +119,7 @@ class NormalTranslator:
             if translated_text:
                 translated_content.append(translated_text)
 
+        # Write output
         with Path(self.output_file).open("w", encoding="utf-8") as f:
             f.writelines(content + "\n\n" for content in translated_content)
 
@@ -94,19 +127,6 @@ class NormalTranslator:
             f"번역이 완료되었습니다. 결과가 {self.output_file}에 저장되었습니다."
         )
 
-    def format_output(self):
-        with Path(self.output_file).open(encoding="utf-8") as f:
-            lines = f.readlines()
-
-        new_lines = []
-        for line in lines:
-            stripped = line.rstrip("\n")
-            if stripped.strip() == "":
-                new_lines.append(line)
-            elif not stripped.startswith("  "):
-                new_lines.append("  " + stripped + "\n")
-            else:
-                new_lines.append(line)
-
-        with Path(self.output_file).open("w", encoding="utf-8") as f:
-            f.writelines(new_lines)
+    def format_output(self) -> None:
+        """Format the output file with consistent indentation."""
+        OutputFormatter.format_output(self.output_file)
