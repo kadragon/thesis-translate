@@ -55,6 +55,7 @@
 2. **용어집**: 프로젝트 루트에 있는 `glossary.json` 파일을 편집하여 특정 학술 용어와 원하는 한국어 번역을 포함시킵니다. 형식은 각 항목이 `"term"` 및 `"translation"` 키를 가진 객체 배열입니다.
 
 3. **기타 설정**: `config.py` 파일을 열어 OpenAI 모델, 토큰 길이, 입출력 파일명 등 기타 설정을 조정할 수 있습니다.
+   - `TRANSLATION_MAX_RETRIES` / `TRANSLATION_RETRY_BACKOFF_SECONDS` 값을 통해 스트리밍 번역 재시도 횟수와 백오프 간격을 조절할 수 있습니다.
 
 ### 번역기 실행
 
