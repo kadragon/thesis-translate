@@ -63,9 +63,3 @@ warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
 strict_equality = false
-
-[dependency-groups]
-dev = [
-    "pytest>=8.4.2",
-    "pytest-cov>=7.0.0",
-]
