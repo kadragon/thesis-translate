@@ -1,12 +1,18 @@
 """This module provides the TextPreprocessor class for managing and translating text."""
 
+import logging
+from pathlib import Path
 
 import clipboard
-import config
+
+from src import config
+
+logger = logging.getLogger(__name__)
 
 
 class TextPreprocessor:
     """Class for managing and translating text."""
+
     FILE_NAME = config.INPUT_FILE
 
     def __init__(self):
@@ -15,7 +21,7 @@ class TextPreprocessor:
 
     def add_text_to_file(self, text: str, file_name: str = FILE_NAME):
         """Append the given text to the specified file."""
-        with open(file_name, 'a', encoding="UTF-8") as f:
+        with Path(file_name).open("a", encoding="UTF-8") as f:
             f.write("  " + text + "\n\n")
 
     def add_text_from_clipboard(self) -> None:
@@ -25,7 +31,7 @@ class TextPreprocessor:
             self.text += clipboard_data + "\n"
             print("현재 관리된 텍스트: " + self.text)
         except Exception as e:
-            print(f"Clipboard Error: {str(e)}")
+            print(f"Clipboard Error: {e!s}")
 
     def _clean_text(self) -> None:
         """Clean and merge the current text."""
@@ -33,15 +39,15 @@ class TextPreprocessor:
             merged_text = ""
 
             for line in self.text.split("\n"):
-                merged_text += line.strip() + ' '
+                merged_text += line.strip() + " "
 
-            merged_text = merged_text.replace('- ', '')
+            merged_text = merged_text.replace("- ", "")
 
             self.text = merged_text.strip()
 
             print("정리된 텍스트: " + self.text)
         except Exception as e:
-            print(f"Clipboard Error: {str(e)}")
+            print(f"Clipboard Error: {e!s}")
 
     def run(self) -> None:
         """Run the main loop for managing text translation."""
@@ -53,28 +59,26 @@ class TextPreprocessor:
                         if start_page.isnumeric():
                             self.page_number = int(start_page)
                             break
-                        else:
-                            print("숫자만 입력해주세요.")
+                        print("숫자만 입력해주세요.")
                     except ValueError:
                         print("잘못된 입력입니다. 숫자를 입력해주세요.")
 
             order = input(
-                "번역을 진행하시겠습니까? [A:추가 / B:종료 / E:페이지번호추가 / Enter:진행]").upper()
-            if order == 'A':
+                "번역을 진행하시겠습니까? [A:추가 / B:종료 / E:페이지번호추가 / Enter:진행]"
+            ).upper()
+            if order == "A":
                 self.add_text_from_clipboard()
-            elif order == '' or order == 'C':
+            elif order in ("", "C"):
                 self.add_text_from_clipboard()
                 self._clean_text()
 
-                if order == 'C':
-                    self.add_text_to_file('  ' + self.text)
+                if order == "C":
+                    self.add_text_to_file("  " + self.text)
                 else:
                     self.add_text_to_file(self.text)
                 self.text = ""
-            elif order == 'B':
+            elif order == "B":
                 break
-            elif order == 'E':
-                self.add_text_to_file(f'p.{self.page_number}')
+            elif order == "E":
+                self.add_text_to_file(f"p.{self.page_number}")
                 self.page_number += 1
-
-

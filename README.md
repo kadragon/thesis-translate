@@ -12,13 +12,14 @@
 
 ## 프로젝트 구조
 
-- `main.py`: 전체 번역 워크플로우를 실행하는 주요 진입점입니다.
-- `config.py`: 모델명, 파일 경로, 토큰 길이 등 프로젝트 전반에 사용되는 설정값을 정의합니다.
-- `core/`:
-  - `batch_translator.py`: OpenAI Batch API를 사용하여 번역 요청을 생성하고, 배치 작업을 관리하며, 결과를 병합합니다.
-  - `translation_config.py`: OpenAI API 호출에 필요한 프롬프트 템플릿, 모델 설정, 용어집 로딩 등을 담당합니다.
-- `utils/`:
-  - `text_preprocessor.py`: 클립보드에서 텍스트를 정리하고 준비하는 기능을 제공하며, 페이지 번호 자동 채번 로직을 포함합니다.
+- `src/`:
+  - `main.py`: 전체 번역 워크플로우를 실행하는 주요 진입점입니다.
+  - `config.py`: 모델명, 파일 경로, 토큰 길이 등 프로젝트 전반에 사용되는 설정값을 정의합니다.
+  - `core/`:
+    - `batch_translator.py`: OpenAI Batch API를 사용하여 번역 요청을 생성하고, 배치 작업을 관리하며, 결과를 병합합니다.
+    - `translation_config.py`: OpenAI API 호출에 필요한 프롬프트 템플릿, 모델 설정, 용어집 로딩 등을 담당합니다.
+  - `utils/`:
+    - `text_preprocessor.py`: 클립보드에서 텍스트를 정리하고 준비하는 기능을 제공하며, 페이지 번호 자동 채번 로직을 포함합니다.
 - `glossary.json`: 사용자 정의 학술 용어와 해당 한국어 번역을 정의하는 JSON 파일입니다.
 
 ## 설정 및 사용법
@@ -60,7 +61,13 @@
 1. 메인 스크립트를 실행합니다:
 
    ```bash
-   uv run main.py
+   uv run thesis-translate
+   ```
+
+   또는 직접 실행:
+
+   ```bash
+   PYTHONPATH=. uv run python src/main.py
    ```
 
 2. 콘솔의 지시에 따릅니다.

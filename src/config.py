@@ -1,6 +1,6 @@
 # config.py
-OPENAI_MODEL = "gpt-4.1-mini"
-TEMPERATURE = 0.1
+OPENAI_MODEL = "gpt-5-mini"
+TEMPERATURE = 1
 MAX_TOKEN_LENGTH = 8000
 INPUT_FILE = "_trimmed_text.txt"
 OUTPUT_FILE = "_result_text_ko.txt"

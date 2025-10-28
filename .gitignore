@@ -163,4 +163,5 @@ cython_debug/
 
 *.txt
 glossary.json
-GEMINI.md
+
+.ruff_cache/

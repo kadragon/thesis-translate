@@ -1,11 +1,16 @@
 import json
+import logging
 import os
+from pathlib import Path
+
 from dotenv import load_dotenv
 from openai import OpenAI
-import config
 
+from src import config
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 class TranslationConfig:
@@ -33,7 +38,12 @@ Begin translating:
 {text}
 """
 
-    def __init__(self, model: str = config.OPENAI_MODEL, temperature: float = config.TEMPERATURE, glossary_path: str = config.GLOSSARY_FILE):
+    def __init__(
+        self,
+        model: str = config.OPENAI_MODEL,
+        temperature: float = config.TEMPERATURE,
+        glossary_path: str = config.GLOSSARY_FILE,
+    ):
         """
         Args:
             model (str): 사용할 OpenAI 모델명.
@@ -49,12 +59,13 @@ Begin translating:
         """
         JSON 파일에서 용어집을 로드하고 PROMPT_TEMPLATE에 맞는 문자열 형식으로 변환합니다.
         """
-        if not os.path.exists(glossary_path):
-            raise FileNotFoundError(f"Glossary file not found at {glossary_path}")
-        
-        with open(glossary_path, 'r', encoding='utf-8') as f:
+        if not Path(glossary_path).exists():
+            msg = f"Glossary file not found at {glossary_path}"
+            raise FileNotFoundError(msg)
+
+        with Path(glossary_path).open(encoding="utf-8") as f:
             data = json.load(f)
-        
+
         glossary_str = ""
         for item in data:
             glossary_str += f"- {item['term']} > {item['translation']}\n"
