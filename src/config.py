@@ -1,8 +1,7 @@
 # config.py
-OPENAI_MODEL = "gpt-5-mini"
-TEMPERATURE = 1
-MAX_TOKEN_LENGTH = 8000
-INPUT_FILE = "_trimmed_text.txt"
-OUTPUT_FILE = "_result_text_ko.txt"
-BATCH_INPUT_FILE = "batch_input.jsonl"
-GLOSSARY_FILE = "glossary.json"
+OPENAI_MODEL: str = "gpt-5-mini"
+TEMPERATURE: float = 1.0
+MAX_TOKEN_LENGTH: int = 8000
+INPUT_FILE: str = "_trimmed_text.txt"
+OUTPUT_FILE: str = "_result_text_ko.txt"
+GLOSSARY_FILE: str = "glossary.json"
