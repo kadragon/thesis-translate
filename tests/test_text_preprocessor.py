@@ -165,7 +165,7 @@ class TestTextPreprocessor:
                 error_message = "boom"
                 raise ValueError(error_message)
 
-        preprocessor.text = cast(str, FaultyText())
+        preprocessor.text = cast("str", FaultyText())
 
         # When
         preprocessor._clean_text()
