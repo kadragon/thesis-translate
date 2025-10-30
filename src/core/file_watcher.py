@@ -42,6 +42,7 @@ class FileWatcher:
         translation_callback: Callable[[str, int], None],
         token_counter: TokenCounter,
         state_file: str = ".translation_state.json",
+        auto_translate: bool = True,
     ) -> None:
         """
         Initialize FileWatcher.
@@ -53,6 +54,8 @@ class FileWatcher:
             translation_callback: Function to call with (content, offset)
             token_counter: TokenCounter instance for counting tokens
             state_file: Path to state persistence file
+            auto_translate: If True, auto-trigger translation; If False,
+                notify only (user-prompted mode)
 
         Raises:
             FileWatcherError: If file_path doesn't exist or invalid params
@@ -63,6 +66,7 @@ class FileWatcher:
         self.translation_callback = translation_callback
         self.token_counter = token_counter
         self.state_file = Path(state_file)
+        self.auto_translate = auto_translate
 
         # Thread coordination
         self._monitoring_thread: threading.Thread | None = None
@@ -72,16 +76,23 @@ class FileWatcher:
         # State
         self._last_processed_offset = 0
 
+        # User-prompted mode state (SPEC-USER-PROMPTED-001)
+        self._translation_ready = False
+        self._ready_token_count = 0
+        self._next_threshold = min_tokens  # Initial threshold
+        self._accumulated_content = ""  # Content ready for translation
+
         # Load state from disk
         self._load_state()
 
         logger.info(
             "FileWatcher initialized: file=%s, "
-            "min_tokens=%d, interval=%.1fs, resume_offset=%d",
+            "min_tokens=%d, interval=%.1fs, resume_offset=%d, auto_translate=%s",
             file_path,
             min_tokens,
             polling_interval,
             self._last_processed_offset,
+            auto_translate,
         )
 
     def start(self) -> None:
@@ -144,6 +155,87 @@ class FileWatcher:
         with self._offset_lock:
             return self._last_processed_offset
 
+    def is_translation_ready(self) -> tuple[bool, int]:
+        """
+        Check if translation is ready to be triggered by user.
+
+        Returns:
+            Tuple of (ready: bool, token_count: int)
+            - ready: True if accumulated tokens >= current threshold
+            - token_count: Number of tokens available for translation
+
+        Thread-safe: Uses offset_lock
+        """
+        with self._offset_lock:
+            return (self._translation_ready, self._ready_token_count)
+
+    def trigger_translation_manual(self) -> bool:
+        """
+        Manually trigger translation for accumulated content.
+
+        Called when user presses 'T' in TextPreprocessor menu.
+        Resets ready flag and advances to next threshold.
+
+        Returns:
+            bool: True if translation was triggered, False if not ready
+
+        Side effects:
+            - Calls translation_callback with accumulated content
+            - Updates _next_threshold
+            - Resets _translation_ready flag
+            - Updates _last_processed_offset
+        """
+        with self._offset_lock:
+            if not self._translation_ready:
+                logger.warning("Translation not ready")
+                return False
+
+            content = self._accumulated_content
+            offset = self._last_processed_offset
+            current_tokens = self._ready_token_count
+
+        # Trigger translation callback (outside lock)
+        try:
+            logger.info(
+                "Manual translation trigger: %d tokens at offset %d",
+                current_tokens,
+                offset,
+            )
+            self.translation_callback(content, offset)
+        except Exception:
+            logger.exception("Translation callback failed")
+            return False
+
+        # Update state after successful trigger
+        with self._offset_lock:
+            # Advance threshold
+            self._next_threshold += self.min_tokens
+            logger.info("Next threshold: %d tokens", self._next_threshold)
+
+            # Reset ready state
+            self._translation_ready = False
+            self._ready_token_count = 0
+            self._accumulated_content = ""
+
+            # Update offset to mark content as processed
+            current_size = self.file_path.stat().st_size
+            self._last_processed_offset = current_size
+
+        # Save state
+        self._save_state()
+
+        return True
+
+    def get_current_threshold(self) -> int:
+        """
+        Get the current threshold value.
+
+        Returns:
+            int: Current threshold (40000, 80000, 120000, etc.)
+        """
+        with self._offset_lock:
+            return self._next_threshold
+
     def _monitor_loop(self) -> None:
         """
         Main monitoring loop (runs in background thread).
@@ -197,7 +289,67 @@ class FileWatcher:
         if not new_content:
             return
 
-        # Count tokens in new content
+        # Flush mode: translate accumulated content regardless of auto_translate
+        if flush and not self.auto_translate:
+            self._handle_flush_mode(new_content, last_offset, current_size)
+            return
+
+        # User-prompted mode: accumulate and notify
+        if not self.auto_translate:
+            self._handle_user_prompted_mode(new_content)
+            return
+
+        # Auto-translate mode: original behavior
+        self._handle_auto_translate_mode(new_content, last_offset, current_size, flush)
+
+    def _handle_flush_mode(
+        self, new_content: str, last_offset: int, current_size: int
+    ) -> None:
+        """Handle flush mode for user-prompted translation."""
+        with self._offset_lock:
+            self._accumulated_content += new_content
+            content_to_translate = self._accumulated_content
+            total_tokens = self.token_counter.count_tokens(content_to_translate)
+
+        if content_to_translate and total_tokens > 0:
+            logger.info(
+                "Flush requested, translating %d accumulated tokens", total_tokens
+            )
+            try:
+                self.translation_callback(content_to_translate, last_offset)
+                with self._offset_lock:
+                    self._last_processed_offset = current_size
+                    self._accumulated_content = ""
+                    self._translation_ready = False
+                self._save_state()
+            except Exception:
+                logger.exception("Translation callback failed during flush")
+
+    def _handle_user_prompted_mode(self, new_content: str) -> None:
+        """Handle user-prompted mode: accumulate content and set ready flag."""
+        with self._offset_lock:
+            self._accumulated_content += new_content
+            total_tokens = self.token_counter.count_tokens(self._accumulated_content)
+            logger.debug(
+                "Accumulated %d bytes, %d total tokens (threshold: %d)",
+                len(new_content),
+                total_tokens,
+                self._next_threshold,
+            )
+
+            if total_tokens >= self._next_threshold and not self._translation_ready:
+                self._translation_ready = True
+                self._ready_token_count = total_tokens
+                logger.info(
+                    "Translation ready: %d tokens >= %d threshold",
+                    total_tokens,
+                    self._next_threshold,
+                )
+
+    def _handle_auto_translate_mode(
+        self, new_content: str, last_offset: int, current_size: int, flush: bool
+    ) -> None:
+        """Handle auto-translate mode: trigger translation when threshold met."""
         token_count = self.token_counter.count_tokens(new_content)
         logger.debug(
             "Detected %d bytes, %d tokens at offset %d",
@@ -206,13 +358,11 @@ class FileWatcher:
             last_offset,
         )
 
-        # Check threshold (or force if flushing)
         should_translate = flush or token_count >= self.min_tokens
         if should_translate:
             if flush:
                 logger.info(
-                    "Flush requested, translating remaining %d tokens",
-                    token_count,
+                    "Flush requested, translating remaining %d tokens", token_count
                 )
             else:
                 logger.info(
@@ -221,21 +371,15 @@ class FileWatcher:
                     self.min_tokens,
                 )
 
-            # Trigger translation callback
             try:
                 self.translation_callback(new_content, last_offset)
             except Exception:
                 logger.exception("Translation callback failed")
-                # Don't update offset if callback failed
                 return
 
-            # Update offset only after successful translation trigger
             with self._offset_lock:
                 self._last_processed_offset = current_size
-
-            # Save state
             self._save_state()
-        # else: Keep offset unchanged to accumulate tokens across polling cycles
 
     def _load_state(self) -> None:
         """

@@ -32,13 +32,14 @@ class ConcurrentTranslationOrchestrator:
     and translation threads, aggregates metrics, and handles shutdown.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         input_file: str,
         output_file: str,
         config: TranslationConfig,
         min_tokens: int = 4000,
         polling_interval: float = 2.0,
+        auto_translate: bool = True,
     ) -> None:
         """
         Initialize orchestrator.
@@ -49,6 +50,8 @@ class ConcurrentTranslationOrchestrator:
             config: TranslationConfig instance
             min_tokens: Minimum tokens before triggering translation
             polling_interval: Seconds between file polls
+            auto_translate: If True, auto-trigger translation; If False,
+                user-prompted mode (SPEC-USER-PROMPTED-001)
 
         Raises:
             FileNotFoundError: If input_file doesn't exist
@@ -58,6 +61,7 @@ class ConcurrentTranslationOrchestrator:
         self.config = config
         self.min_tokens = min_tokens
         self.polling_interval = polling_interval
+        self.auto_translate = auto_translate
 
         # Components
         self.token_counter = TokenCounter()
@@ -125,6 +129,7 @@ class ConcurrentTranslationOrchestrator:
             polling_interval=self.polling_interval,
             translation_callback=translation_callback,
             token_counter=self.token_counter,
+            auto_translate=self.auto_translate,
         )
 
         self._file_watcher.start()
@@ -185,6 +190,56 @@ class ConcurrentTranslationOrchestrator:
                 failures=self._total_failures,
                 duration_seconds=duration,
             )
+
+    def is_translation_ready(self) -> tuple[bool, int]:
+        """
+        Check if translation is ready to be triggered by user.
+
+        Proxy to FileWatcher.is_translation_ready().
+
+        Returns:
+            Tuple of (ready: bool, token_count: int)
+        """
+        if self._file_watcher:
+            return self._file_watcher.is_translation_ready()
+        return (False, 0)
+
+    def trigger_translation_manual(self) -> bool:
+        """
+        Manually start translation.
+
+        Calls FileWatcher.trigger_translation_manual() which triggers
+        the translation callback and advances the threshold.
+
+        Returns:
+            bool: True if started, False if not ready or already translating
+        """
+        if self._file_watcher:
+            return self._file_watcher.trigger_translation_manual()
+        return False
+
+    def is_translating(self) -> bool:
+        """
+        Check if translation is currently in progress.
+
+        Returns:
+            bool: True if translation worker is active
+        """
+        # Check if there are active worker threads or pending results
+        return not self.result_queue.empty()
+
+    def get_current_threshold(self) -> int:
+        """
+        Get the current threshold value.
+
+        Proxy to FileWatcher.get_current_threshold().
+
+        Returns:
+            int: Current threshold (40000, 80000, 120000, etc.)
+        """
+        if self._file_watcher:
+            return self._file_watcher.get_current_threshold()
+        return self.min_tokens
 
     def _process_results(self) -> None:
         """
