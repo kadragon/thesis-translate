@@ -107,12 +107,20 @@ class FileWatcher:
         """
         Stop monitoring and wait for thread to exit.
 
+        Processes any remaining content below threshold before shutdown.
         Saves state before exit. Idempotent.
         """
         if self._monitoring_thread is None:
             return
 
         logger.info("FileWatcher shutdown requested")
+
+        # Process remaining content before shutdown (flush)
+        try:
+            self._check_and_trigger(flush=True)
+        except Exception:
+            logger.exception("Error during final flush")
+
         self._shutdown_event.set()
 
         # Wait for thread to exit
@@ -157,9 +165,12 @@ class FileWatcher:
 
         logger.debug("Monitoring loop exited")
 
-    def _check_and_trigger(self) -> None:
+    def _check_and_trigger(self, flush: bool = False) -> None:
         """
         Check file for new content and trigger translation if threshold met.
+
+        Args:
+            flush: If True, force translation regardless of threshold
 
         Updates offset and saves state when translation triggered.
         """
@@ -195,13 +206,20 @@ class FileWatcher:
             last_offset,
         )
 
-        # Check threshold
-        if token_count >= self.min_tokens:
-            logger.info(
-                "Threshold exceeded (%d >= %d), triggering translation",
-                token_count,
-                self.min_tokens,
-            )
+        # Check threshold (or force if flushing)
+        should_translate = flush or token_count >= self.min_tokens
+        if should_translate:
+            if flush:
+                logger.info(
+                    "Flush requested, translating remaining %d tokens",
+                    token_count,
+                )
+            else:
+                logger.info(
+                    "Threshold exceeded (%d >= %d), triggering translation",
+                    token_count,
+                    self.min_tokens,
+                )
 
             # Trigger translation callback
             try:
@@ -211,16 +229,13 @@ class FileWatcher:
                 # Don't update offset if callback failed
                 return
 
-            # Update offset
+            # Update offset only after successful translation trigger
             with self._offset_lock:
                 self._last_processed_offset = current_size
 
             # Save state
             self._save_state()
-        else:
-            # Update offset even if below threshold (for progress tracking)
-            with self._offset_lock:
-                self._last_processed_offset = current_size
+        # else: Keep offset unchanged to accumulate tokens across polling cycles
 
     def _load_state(self) -> None:
         """

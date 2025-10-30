@@ -190,35 +190,54 @@ class ConcurrentTranslationOrchestrator:
         """
         Process translation results from queue.
 
-        Runs until shutdown requested. Collects results, updates metrics,
-        and writes to output file incrementally.
+        Runs until shutdown requested, then drains remaining results
+        to prevent data loss from in-flight translations.
         """
         logger.debug("Result processing started")
 
+        # Process results during normal operation
         while not self._shutdown_requested:
             try:
                 # Wait for result with timeout
                 result = self.result_queue.get(timeout=1.0)
-
-                # Update metrics
-                with self._metrics_lock:
-                    self._total_successes += result.successes
-                    self._total_failures += result.failures
-
-                # Write translated text to output file
-                if result.translated_text:
-                    with self.output_file.open("a", encoding="utf-8") as f:
-                        f.write(result.translated_text)
-                        f.write("\n\n")  # Separator between chunks
-
-                    logger.info(
-                        "Wrote translated chunk from offset %d (%d chars)",
-                        result.start_offset,
-                        len(result.translated_text),
-                    )
-
+                self._handle_result(result)
             except queue.Empty:
                 # No result available; continue waiting
                 continue
 
+        # Drain remaining results after shutdown signal
+        logger.info("Shutdown requested, draining final results from queue")
+        while True:
+            try:
+                result = self.result_queue.get_nowait()
+                self._handle_result(result)
+            except queue.Empty:
+                break
+
         logger.debug("Result processing stopped")
+
+    def _handle_result(self, result: TranslationResult) -> None:
+        """
+        Handle a single translation result.
+
+        Updates metrics and writes to output file.
+
+        Args:
+            result: TranslationResult from worker thread
+        """
+        # Update metrics
+        with self._metrics_lock:
+            self._total_successes += result.successes
+            self._total_failures += result.failures
+
+        # Write translated text to output file
+        if result.translated_text:
+            with self.output_file.open("a", encoding="utf-8") as f:
+                f.write(result.translated_text)
+                f.write("\n\n")  # Separator between chunks
+
+            logger.info(
+                "Wrote translated chunk from offset %d (%d chars)",
+                result.start_offset,
+                len(result.translated_text),
+            )

@@ -47,8 +47,11 @@ class TestFileWatcher:
             # Wait for at least one polling cycle
             time.sleep(0.7)
 
-            # Verify offset was updated (even if translation not triggered)
-            assert watcher.get_last_offset() > len("Initial content\n")
+            # Verify offset NOT updated (content below threshold accumulates)
+            # This fixes data loss issue identified in PR review
+            assert watcher.get_last_offset() == 0
+            # Callback should not be triggered below threshold
+            callback.assert_not_called()
 
             watcher.stop()
         finally:
