@@ -29,6 +29,7 @@ class TranslationResult:
     Result of a translation operation.
 
     Includes metrics, translated text, and original offset for tracking.
+    Also includes content length for offset management.
     """
 
     successes: int
@@ -36,6 +37,7 @@ class TranslationResult:
     duration_seconds: float
     translated_text: str | None
     start_offset: int
+    content_length_bytes: int  # Length of original content in bytes
     error: Exception | None = None
 
 
@@ -99,6 +101,9 @@ class TranslationWorker:
         start_time = time.time()
         logger.info("Translation started for offset %d", start_offset)
 
+        # Calculate content length in bytes for offset management
+        content_length_bytes = len(content.encode("utf-8"))
+
         try:
             # Split content into lines for chunking
             lines = content.splitlines(keepends=True)
@@ -117,6 +122,7 @@ class TranslationWorker:
                     duration_seconds=duration,
                     translated_text="",
                     start_offset=start_offset,
+                    content_length_bytes=content_length_bytes,
                     error=None,
                 )
                 self.result_queue.put(result)
@@ -148,6 +154,7 @@ class TranslationWorker:
                 duration_seconds=duration,
                 translated_text=translated_text,
                 start_offset=start_offset,
+                content_length_bytes=content_length_bytes,
                 error=None,
             )
 
@@ -171,6 +178,7 @@ class TranslationWorker:
                 duration_seconds=duration,
                 translated_text=None,
                 start_offset=start_offset,
+                content_length_bytes=content_length_bytes,
                 error=e,
             )
             self.result_queue.put(result)
@@ -187,6 +195,7 @@ class TranslationWorker:
                 duration_seconds=duration,
                 translated_text=None,
                 start_offset=start_offset,
+                content_length_bytes=content_length_bytes,
                 error=e,
             )
             self.result_queue.put(result)

@@ -207,15 +207,10 @@ class FileWatcher:
             return False
 
         # Update state after successful trigger
+        # NOTE: Offset is NOT updated here. ConcurrentOrchestrator will update
+        # offset via update_offset_after_completion() when translation completes.
+        # This prevents data loss if app crashes during translation.
         with self._offset_lock:
-            # Calculate bytes actually sent to translation
-            content_bytes = len(content.encode("utf-8"))
-
-            # Only advance offset by bytes we actually translated
-            # This prevents race condition where watcher adds content between
-            # releasing and re-acquiring lock
-            self._last_processed_offset = offset + content_bytes
-
             # Remove translated content from accumulated buffer
             # Keep any new content that was added concurrently
             if self._accumulated_content.startswith(content):
@@ -240,9 +235,6 @@ class FileWatcher:
             self._translation_ready = False
             self._ready_token_count = 0
 
-        # Save state
-        self._save_state()
-
         return True
 
     def get_current_threshold(self) -> int:
@@ -254,6 +246,32 @@ class FileWatcher:
         """
         with self._offset_lock:
             return self._next_threshold
+
+    def update_offset_after_completion(self, new_offset: int) -> None:
+        """
+        Update offset after translation completion.
+
+        Called by ConcurrentOrchestrator after successful translation.
+        Only updates if new offset is greater than current (prevents regression).
+
+        Args:
+            new_offset: New offset value (start_offset + content_length_bytes)
+        """
+        with self._offset_lock:
+            if new_offset > self._last_processed_offset:
+                logger.info(
+                    "Updating offset after completion: %d -> %d",
+                    self._last_processed_offset,
+                    new_offset,
+                )
+                self._last_processed_offset = new_offset
+                self._save_state()
+            else:
+                logger.debug(
+                    "Ignoring offset update %d (current: %d)",
+                    new_offset,
+                    self._last_processed_offset,
+                )
 
     def _monitor_loop(self) -> None:
         """
@@ -322,9 +340,13 @@ class FileWatcher:
         self._handle_auto_translate_mode(new_content, last_offset, current_size, flush)
 
     def _handle_flush_mode(
-        self, new_content: str, last_offset: int, current_size: int
+        self, new_content: str, last_offset: int, _current_size: int
     ) -> None:
-        """Handle flush mode for user-prompted translation."""
+        """Handle flush mode for user-prompted translation.
+
+        NOTE: Offset is NOT updated here. ConcurrentOrchestrator will update
+        offset via update_offset_after_completion() when translation completes.
+        """
         with self._offset_lock:
             self._accumulated_content += new_content
             content_to_translate = self._accumulated_content
@@ -337,10 +359,8 @@ class FileWatcher:
             try:
                 self.translation_callback(content_to_translate, last_offset)
                 with self._offset_lock:
-                    self._last_processed_offset = current_size
                     self._accumulated_content = ""
                     self._translation_ready = False
-                self._save_state()
             except Exception:
                 logger.exception("Translation callback failed during flush")
 
@@ -366,9 +386,14 @@ class FileWatcher:
                 )
 
     def _handle_auto_translate_mode(
-        self, new_content: str, last_offset: int, current_size: int, flush: bool
+        self, new_content: str, last_offset: int, _current_size: int, flush: bool
     ) -> None:
-        """Handle auto-translate mode: trigger translation when threshold met."""
+        """Handle auto-translate mode: trigger translation when threshold met.
+
+        NOTE: Offset is NOT updated here. ConcurrentOrchestrator will update
+        offset via update_offset_after_completion() when translation completes.
+        This prevents data loss if app crashes during translation.
+        """
         token_count = self.token_counter.count_tokens(new_content)
         logger.debug(
             "Detected %d bytes, %d tokens at offset %d",
@@ -395,10 +420,6 @@ class FileWatcher:
             except Exception:
                 logger.exception("Translation callback failed")
                 return
-
-            with self._offset_lock:
-                self._last_processed_offset = current_size
-            self._save_state()
 
     def _load_state(self) -> None:
         """

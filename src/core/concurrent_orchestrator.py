@@ -275,7 +275,8 @@ class ConcurrentTranslationOrchestrator:
         """
         Handle a single translation result.
 
-        Updates metrics and writes to output file.
+        Updates metrics, writes to output file, and updates offset after
+        successful translation completion.
 
         Args:
             result: TranslationResult from worker thread
@@ -296,3 +297,10 @@ class ConcurrentTranslationOrchestrator:
                 result.start_offset,
                 len(result.translated_text),
             )
+
+            # Update offset after successful translation
+            # This ensures offset is only advanced after translation completes
+            # preventing data loss on app crash during translation
+            if result.successes > 0 and self._file_watcher:
+                new_offset = result.start_offset + result.content_length_bytes
+                self._file_watcher.update_offset_after_completion(new_offset)
