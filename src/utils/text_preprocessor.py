@@ -1,12 +1,17 @@
 """Text preprocessing utilities for managing and preparing text for translation."""
 # GENERATED FROM SPEC-TEXT-PREP-001
+# GENERATED FROM SPEC-USER-PROMPTED-001
 
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import clipboard
 
 from src import config
+
+if TYPE_CHECKING:
+    from src.core.concurrent_orchestrator import ConcurrentTranslationOrchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +24,19 @@ class TextPreprocessor:
     # Trace: SPEC-TEXT-PREP-001, TEST-TEXT-PREP-001-AC1
     # Trace: SPEC-TEXT-PREP-001, TEST-TEXT-PREP-001-AC2
     # Trace: SPEC-TEXT-PREP-001, TEST-TEXT-PREP-001-AC3
-    def __init__(self) -> None:
-        """Initialize text preprocessor."""
+    # Trace: SPEC-USER-PROMPTED-001, TEST-USER-PROMPTED-001-AC2
+    def __init__(
+        self,
+        orchestrator: "ConcurrentTranslationOrchestrator | None" = None,
+    ) -> None:
+        """Initialize text preprocessor.
+
+        Args:
+            orchestrator: Optional ConcurrentOrchestrator for translation status.
+        """
         self.text: str = ""
         self.page_number: int | None = None
+        self.orchestrator = orchestrator
 
     # Trace: SPEC-TEXT-PREP-001, TEST-TEXT-PREP-001-AC4
     def add_text_to_file(self, text: str, file_name: str = FILE_NAME) -> None:
@@ -69,8 +83,62 @@ class TextPreprocessor:
                 exc_info=exc,
             )
 
+    # Trace: SPEC-USER-PROMPTED-001, TEST-USER-PROMPTED-001-AC2
+    def _display_translation_status(self) -> str:
+        """Display translation status if orchestrator is available.
+
+        Returns:
+            Additional menu text with translation status.
+        """
+        if self.orchestrator is None:
+            return ""
+
+        ready, token_count = self.orchestrator.is_translation_ready()
+        if ready:
+            return f" / T:번역시작({token_count} tokens)"
+        return ""
+
+    # Trace: SPEC-USER-PROMPTED-001, TEST-USER-PROMPTED-001-AC3
+    def _handle_translation_trigger(self) -> bool:
+        """Handle 'T' key to trigger translation.
+
+        Returns:
+            True if translation was triggered, False otherwise.
+        """
+        if self.orchestrator is None:
+            return False
+
+        success = self.orchestrator.trigger_translation_manual()
+        if success:
+            print("번역을 시작합니다...")  # noqa: T201
+            return True
+        print("번역 가능한 컨텐츠가 없습니다.")  # noqa: T201
+        return False
+
+    # Trace: SPEC-USER-PROMPTED-001, TEST-USER-PROMPTED-001-AC6
+    def _handle_exit_confirmation(self) -> bool:
+        """Handle exit confirmation when translation is ready.
+
+        Returns:
+            True if user confirms exit, False to continue.
+        """
+        if self.orchestrator is None:
+            return True
+
+        ready, token_count = self.orchestrator.is_translation_ready()
+        if ready:
+            confirm = input(
+                f"번역 가능한 컨텐츠가 있습니다 ({token_count} tokens). "
+                "정말 종료하시겠습니까? [Y/N]: "
+            ).upper()
+            return confirm == "Y"
+        return True
+
     # Trace: SPEC-TEXT-PREP-001, TEST-TEXT-PREP-001-AC4
     # Trace: SPEC-TEXT-PREP-001, TEST-TEXT-PREP-001-AC5
+    # Trace: SPEC-USER-PROMPTED-001, TEST-USER-PROMPTED-001-AC2
+    # Trace: SPEC-USER-PROMPTED-001, TEST-USER-PROMPTED-001-AC3
+    # Trace: SPEC-USER-PROMPTED-001, TEST-USER-PROMPTED-001-AC6
     def run(self) -> None:
         """Run the main loop for managing text translation."""
         while True:
@@ -85,10 +153,15 @@ class TextPreprocessor:
                     except ValueError:
                         pass
 
-            order = input(
-                "번역을 진행하시겠습니까? [A:추가 / B:종료 / E:페이지번호추가 /"
-                " Enter:진행]"
-            ).upper()
+            # Build menu with translation status
+            translation_status = self._display_translation_status()
+            menu_prompt = (
+                f"번역을 진행하시겠습니까? "
+                f"[A:추가 / B:종료 / E:페이지번호추가 / Enter:진행"
+                f"{translation_status}]: "
+            )
+
+            order = input(menu_prompt).upper()
             if order == "A":
                 self.add_text_from_clipboard()
             elif order in ("", "C"):
@@ -98,7 +171,10 @@ class TextPreprocessor:
                 self.add_text_to_file(self.text)
                 self.text = ""
             elif order == "B":
-                break
+                if self._handle_exit_confirmation():
+                    break
             elif order == "E":
                 self.add_text_to_file(f"p.{self.page_number}")
                 self.page_number += 1
+            elif order == "T":
+                self._handle_translation_trigger()
