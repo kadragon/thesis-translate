@@ -3,6 +3,7 @@
 # GENERATED FROM SPEC-USER-PROMPTED-001
 
 import logging
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -115,7 +116,7 @@ class TextPreprocessor:
         print("번역 가능한 컨텐츠가 없습니다.")  # noqa: T201
         return False
 
-    # Trace: SPEC-USER-PROMPTED-001, TEST-USER-PROMPTED-001-AC6
+    # Trace: SPEC-USER-PROMPTED-001, TEST-USER-PROMPTED-001-AC7
     def _handle_exit_confirmation(self) -> bool:
         """Handle exit confirmation when translation is ready.
 
@@ -128,10 +129,26 @@ class TextPreprocessor:
         ready, token_count = self.orchestrator.is_translation_ready()
         if ready:
             confirm = input(
-                f"번역 가능한 컨텐츠가 있습니다 ({token_count} tokens). "
-                "정말 종료하시겠습니까? [Y/N]: "
+                f"{token_count} tokens 미번역. 번역 후 종료할까요? (Y/N): "
             ).upper()
-            return confirm == "Y"
+            if confirm == "Y":
+                print("남은 컨텐츠를 번역하고 종료합니다...")  # noqa: T201
+                if self._handle_translation_trigger():
+                    # Wait for the translation to complete with timeout
+                    max_wait = 300  # 5 minutes
+                    waited = 0
+                    while self.orchestrator.is_translating() and waited < max_wait:
+                        print("번역 완료 대기 중...")  # noqa: T201
+                        time.sleep(1)
+                        waited += 1
+                    if waited >= max_wait:  # pragma: no cover
+                        print("번역 대기 시간 초과. 종료합니다.")  # noqa: T201
+                return True  # Proceed to exit
+            if confirm == "N":
+                return True  # Exit without translating
+
+            print("잘못된 입력입니다. 계속 진행합니다.")  # noqa: T201
+            return False  # Invalid input, continue loop
         return True
 
     # Trace: SPEC-TEXT-PREP-001, TEST-TEXT-PREP-001-AC4

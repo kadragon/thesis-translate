@@ -73,6 +73,10 @@ class ConcurrentTranslationOrchestrator:
         self._total_failures = 0
         self._start_time = 0.0
 
+        # Active translation tracking (SPEC-USER-PROMPTED-001)
+        self._active_translations = 0
+        self._active_translations_lock = threading.Lock()
+
         # Shutdown coordination
         self._shutdown_requested = False
         self._file_watcher: FileWatcher | None = None
@@ -120,6 +124,9 @@ class ConcurrentTranslationOrchestrator:
         # Define callback for FileWatcher
         def translation_callback(content: str, offset: int) -> None:
             logger.info("Translation triggered for offset %d", offset)
+            # Increment active translation counter
+            with self._active_translations_lock:
+                self._active_translations += 1
             worker.translate_async(content, offset)
 
         # Create and start FileWatcher
@@ -208,12 +215,17 @@ class ConcurrentTranslationOrchestrator:
         """
         Manually start translation.
 
-        Calls FileWatcher.trigger_translation_manual() which triggers
+        Prevents concurrent translations by checking if one is already in
+        progress. Calls FileWatcher.trigger_translation_manual() which triggers
         the translation callback and advances the threshold.
 
         Returns:
             bool: True if started, False if not ready or already translating
         """
+        if self.is_translating():
+            logger.warning("Translation is already in progress. Cannot start another.")
+            return False
+
         if self._file_watcher:
             return self._file_watcher.trigger_translation_manual()
         return False
@@ -222,11 +234,15 @@ class ConcurrentTranslationOrchestrator:
         """
         Check if translation is currently in progress.
 
+        Uses an atomic counter to track active translations, preventing
+        race conditions where translations are in progress but results
+        have not yet been queued.
+
         Returns:
             bool: True if translation worker is active
         """
-        # Check if there are active worker threads or pending results
-        return not self.result_queue.empty()
+        with self._active_translations_lock:
+            return self._active_translations > 0
 
     def get_current_threshold(self) -> int:
         """
@@ -304,3 +320,7 @@ class ConcurrentTranslationOrchestrator:
             if result.successes > 0 and self._file_watcher:
                 new_offset = result.start_offset + result.content_length_bytes
                 self._file_watcher.update_offset_after_completion(new_offset)
+
+        # Decrement active translation counter
+        with self._active_translations_lock:
+            self._active_translations -= 1

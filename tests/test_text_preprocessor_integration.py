@@ -86,14 +86,16 @@ class TestTextPreprocessorIntegration:
 
         assert result is False
 
-    # Trace: SPEC-USER-PROMPTED-001, TEST-USER-PROMPTED-001-AC6
+    # Trace: SPEC-USER-PROMPTED-001, TEST-USER-PROMPTED-001-AC7
     @patch("builtins.input", return_value="Y")
     def test_handle_exit_confirmation_with_ready_content_yes(
         self, mock_input: MagicMock
     ) -> None:
-        """Test exit confirmation when content is ready and user confirms."""
+        """Test exit confirmation when user confirms translation before exit."""
         mock_orchestrator = MagicMock()
         mock_orchestrator.is_translation_ready.return_value = (True, 50000)
+        mock_orchestrator.trigger_translation_manual.return_value = True
+        mock_orchestrator.is_translating.return_value = False  # Translation completes
 
         preprocessor = TextPreprocessor(orchestrator=mock_orchestrator)
 
@@ -102,12 +104,14 @@ class TestTextPreprocessorIntegration:
         assert result is True
         mock_input.assert_called_once()
         assert "50000 tokens" in mock_input.call_args[0][0]
+        assert "미번역" in mock_input.call_args[0][0]
+        mock_orchestrator.trigger_translation_manual.assert_called_once()
 
     @patch("builtins.input", return_value="N")
     def test_handle_exit_confirmation_with_ready_content_no(
         self, _mock_input: MagicMock
     ) -> None:
-        """Test exit confirmation when content is ready and user cancels."""
+        """Test exit confirmation when user declines translation and exits."""
         mock_orchestrator = MagicMock()
         mock_orchestrator.is_translation_ready.return_value = (True, 50000)
 
@@ -115,6 +119,22 @@ class TestTextPreprocessorIntegration:
 
         result = preprocessor._handle_exit_confirmation()
 
+        # AC-7: N means exit without translation
+        assert result is True
+
+    @patch("builtins.input", return_value="X")
+    def test_handle_exit_confirmation_with_invalid_input(
+        self, _mock_input: MagicMock
+    ) -> None:
+        """Test exit confirmation when user provides invalid input."""
+        mock_orchestrator = MagicMock()
+        mock_orchestrator.is_translation_ready.return_value = (True, 50000)
+
+        preprocessor = TextPreprocessor(orchestrator=mock_orchestrator)
+
+        result = preprocessor._handle_exit_confirmation()
+
+        # AC-7: Invalid input returns False (continue)
         assert result is False
 
     def test_handle_exit_confirmation_without_ready_content(self) -> None:
@@ -140,6 +160,7 @@ class TestTextPreprocessorIntegration:
 
     # Trace: SPEC-USER-PROMPTED-001, TEST-USER-PROMPTED-001-AC2
     # Trace: SPEC-USER-PROMPTED-001, TEST-USER-PROMPTED-001-AC3
+    # Trace: SPEC-USER-PROMPTED-001, TEST-USER-PROMPTED-001-AC7
     @patch("builtins.input")
     @patch("clipboard.paste", return_value="Test content")
     @patch.object(TextPreprocessor, "add_text_to_file")
@@ -153,32 +174,42 @@ class TestTextPreprocessorIntegration:
         mock_orchestrator = MagicMock()
         mock_orchestrator.is_translation_ready.return_value = (True, 45000)
         mock_orchestrator.trigger_translation_manual.return_value = True
+        mock_orchestrator.is_translating.return_value = False  # Translation completes
 
         preprocessor = TextPreprocessor(orchestrator=mock_orchestrator)
         preprocessor.page_number = 1
 
         # Simulate: T to trigger, then B to exit, Y to confirm
+        # (triggers translation again)
         mock_input.side_effect = ["T", "B", "Y"]
 
         with patch("builtins.print"):
             preprocessor.run()
 
-        # Verify trigger was called
-        mock_orchestrator.trigger_translation_manual.assert_called_once()
+        # Verify trigger was called twice (once for 'T', once for 'Y'
+        # in exit confirmation)
+        expected_trigger_count = 2
+        assert (
+            mock_orchestrator.trigger_translation_manual.call_count
+            == expected_trigger_count
+        )
 
     @patch("builtins.input")
     def test_run_with_exit_confirmation_cancel(self, mock_input: MagicMock) -> None:
-        """Test run loop with exit confirmation cancelled."""
+        """Test run loop with exit confirmation cancelled by invalid input."""
         mock_orchestrator = MagicMock()
         mock_orchestrator.is_translation_ready.return_value = (True, 45000)
+        mock_orchestrator.trigger_translation_manual.return_value = True
+        mock_orchestrator.is_translating.return_value = False  # Translation completes
 
         preprocessor = TextPreprocessor(orchestrator=mock_orchestrator)
         preprocessor.page_number = 1
 
-        # Simulate: B to exit, N to cancel, B again, Y to confirm
-        mock_input.side_effect = ["B", "N", "B", "Y"]
+        # Simulate: B to exit, X to cancel (invalid), B again, Y to confirm translation
+        mock_input.side_effect = ["B", "X", "B", "Y"]
 
-        preprocessor.run()
+        with patch("builtins.print"):
+            preprocessor.run()
 
         # Should have asked for confirmation twice
         expected_call_count = 4  # 2 menu prompts + 2 confirmations
