@@ -241,7 +241,9 @@ class TestUserPromptedOrchestrator:
             input_file = f.name
             f.write("test content " * 12000)
 
-        output_file = tempfile.mktemp(suffix=".txt")
+        # Create output file securely
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
+            output_file = f.name
 
         try:
             config = TranslationConfig()
@@ -294,7 +296,9 @@ class TestUserPromptedOrchestrator:
             input_file = f.name
             f.write("test " * 1500)  # ~4500 tokens
 
-        output_file = tempfile.mktemp(suffix=".txt")
+        # Create output file securely
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as f:
+            output_file = f.name
 
         try:
             config = TranslationConfig()
