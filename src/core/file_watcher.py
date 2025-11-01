@@ -208,6 +208,30 @@ class FileWatcher:
 
         # Update state after successful trigger
         with self._offset_lock:
+            # Calculate bytes actually sent to translation
+            content_bytes = len(content.encode("utf-8"))
+
+            # Only advance offset by bytes we actually translated
+            # This prevents race condition where watcher adds content between
+            # releasing and re-acquiring lock
+            self._last_processed_offset = offset + content_bytes
+
+            # Remove translated content from accumulated buffer
+            # Keep any new content that was added concurrently
+            if self._accumulated_content.startswith(content):
+                self._accumulated_content = self._accumulated_content[len(content) :]
+                logger.debug(
+                    "Removed %d chars from buffer, %d remaining",
+                    len(content),
+                    len(self._accumulated_content),
+                )
+            else:
+                # Safety: if content doesn't match (shouldn't happen), clear it
+                logger.warning(
+                    "Accumulated content mismatch, clearing buffer (data loss possible)"
+                )
+                self._accumulated_content = ""
+
             # Advance threshold
             self._next_threshold += self.min_tokens
             logger.info("Next threshold: %d tokens", self._next_threshold)
@@ -215,11 +239,6 @@ class FileWatcher:
             # Reset ready state
             self._translation_ready = False
             self._ready_token_count = 0
-            self._accumulated_content = ""
-
-            # Update offset to mark content as processed
-            current_size = self.file_path.stat().st_size
-            self._last_processed_offset = current_size
 
         # Save state
         self._save_state()
