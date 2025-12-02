@@ -3,11 +3,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
-
 from src import config
 
-load_dotenv()
+# Trace: SPEC-CONFIG-001, TASK-20251117-01
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +46,9 @@ Begin translating:
 
     def __init__(
         self,
-        model: str = config.OPENAI_MODEL,
-        temperature: float = config.TEMPERATURE,
-        glossary_path: str = config.GLOSSARY_FILE,
+        model: str | None = None,
+        temperature: float | None = None,
+        glossary_path: str | None = None,
     ) -> None:
         """Initialize translation configuration.
 
@@ -62,9 +60,12 @@ Begin translating:
         Raises:
             FileNotFoundError: If glossary file is not found.
         """
-        self.model: str = model
-        self.temperature: float = temperature
-        self.glossary: str = self._load_glossary_from_json(glossary_path)
+        self.model: str = model or config.OPENAI_MODEL
+        self.temperature: float = (
+            temperature if temperature is not None else config.TEMPERATURE
+        )
+        glossary_source = glossary_path or config.GLOSSARY_FILE
+        self.glossary: str = self._load_glossary_from_json(glossary_source)
 
     def _load_glossary_from_json(self, glossary_path: str) -> str:
         """Load glossary from JSON file and format for prompt template.
