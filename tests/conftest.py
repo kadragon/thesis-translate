@@ -9,8 +9,6 @@ from pathlib import Path
 
 import pytest
 
-import src.config as cfg
-
 # Ensure required environment variables are present before modules import config.
 # Values are test-friendly defaults and can be overridden within individual tests.
 _TEST_ROOT = Path(__file__).parent
@@ -29,6 +27,9 @@ _DEFAULT_ENV = {
 
 for key, value in _DEFAULT_ENV.items():
     os.environ.setdefault(key, value)
+
+# Import src.config *after* setting default environment variables.
+import src.config as cfg  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
