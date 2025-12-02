@@ -71,7 +71,7 @@ class FileWatcher:
         # Thread coordination
         self._monitoring_thread: threading.Thread | None = None
         self._shutdown_event = threading.Event()
-        self._offset_lock = threading.Lock()
+        self._offset_lock = threading.RLock()  # Use RLock for reentrant locking
 
         # State
         self._last_processed_offset = 0

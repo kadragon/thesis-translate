@@ -67,9 +67,9 @@ class TestUserPromptedFileWatcher:
             # Check ready flag is set
             ready, token_count = watcher.is_translation_ready()
             assert ready is True, "Ready flag should be set"
-            assert (
-                token_count >= INITIAL_THRESHOLD
-            ), f"Token count should be >= 40000, got {token_count}"
+            assert token_count >= INITIAL_THRESHOLD, (
+                f"Token count should be >= 40000, got {token_count}"
+            )
 
             # Verify callback was NOT called (no auto-trigger)
             callback.assert_not_called()
@@ -173,9 +173,9 @@ class TestUserPromptedFileWatcher:
                 watcher.trigger_translation_manual()
 
             # Check threshold advanced
-            assert (
-                watcher.get_current_threshold() == SECOND_THRESHOLD
-            ), "Threshold should increment to 80000"
+            assert watcher.get_current_threshold() == SECOND_THRESHOLD, (
+                "Threshold should increment to 80000"
+            )
 
             watcher.stop()
         finally:

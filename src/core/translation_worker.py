@@ -160,8 +160,7 @@ class TranslationWorker:
 
             self.result_queue.put(result)
             logger.info(
-                "Translation completed for offset %d: "
-                "%d successes, %d failures, %.2fs",
+                "Translation completed for offset %d: %d successes, %d failures, %.2fs",
                 start_offset,
                 successes,
                 failures,

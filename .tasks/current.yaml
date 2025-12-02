@@ -1,0 +1,15 @@
+# Current Task
+# Only one active task at a time
+# When starting work, move a task from backlog.yaml to here
+# When finished, move to done.yaml
+
+current_task: null
+
+# Example format when a task is active:
+# current_task:
+#   task_id: TASK-XXX
+#   spec_id: SPEC-XXX-XXX
+#   title: "Task title"
+#   started_at: "2025-12-02T10:00:00Z"
+#   status: in_progress
+#   notes: "Optional progress notes"

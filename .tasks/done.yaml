@@ -1,0 +1,138 @@
+# Completed Tasks
+# Tasks are listed in reverse chronological order (most recent first)
+# IMPORTANT: Each task must be properly indented under completed_tasks list
+
+completed_tasks:
+  - task_id: TASK-20251117-01
+    spec_id: SPEC-CONFIG-001
+    title: "Env-based Required Config"
+    completed_at: "2025-12-02T09:00:00Z"
+    outcome: |
+      Successfully migrated configuration from hardcoded constants to environment variables:
+      - Refactored src/config.py to load all settings from environment variables
+      - Added validation for required environment variables with descriptive errors
+      - Updated TranslationConfig to use environment-backed config as defaults
+      - Added comprehensive tests for env loading and validation (AC-3, AC-4)
+      - Updated .env.example with all required configuration fields
+    test_results: |
+      ✓ All tests pass (pytest)
+      ✓ Tests cover env resolution and missing-var failure
+      ✓ Type checking passes (mypy)
+      ✓ Linting passes (ruff)
+    estimated_effort: 2h
+    actual_effort: 2h
+    notes: |
+      All acceptance criteria met:
+      - ✓ Spec updated with new AC and tracing
+      - ✓ Tests cover env resolution and missing-var failure
+      - ✓ Implementation uses env values exclusively and validates presence
+      - ✓ .env.example lists new required keys
+      - ✓ All tests pass
+      - ✓ memory.md updated
+      - ✓ Task status recorded
+
+  - task_id: TASK-20251101-01
+    spec_id: SPEC-USER-PROMPTED-001
+    title: "User-Prompted Translation CLI Integration"
+    completed_at: "2025-11-01T18:00:00Z"
+    outcome: |
+      Implemented user-prompted translation mode with manual triggering:
+      - Modified FileWatcher to support auto_translate parameter (backward compatible)
+      - Added user-prompted mode state management (ready flag, token accumulation, threshold progression)
+      - Implemented manual trigger methods: is_translation_ready(), trigger_translation_manual(), get_current_threshold()
+      - Added proxy methods to ConcurrentOrchestrator for CLI integration
+      - Integrated TextPreprocessor with orchestrator for translation status display
+      - Added 'T' key handler for manual translation triggering
+      - Added exit confirmation when untranslated content exists
+    test_results: |
+      ✓ All tests pass (54 total: 48 original + 6 new)
+      ✓ Coverage maintained above 85% threshold
+      ✓ Linting passes with no violations
+      ✓ Threshold progression works correctly (40k → 80k → 120k tokens)
+      ✓ Manual trigger API tested and verified
+    estimated_effort: 6h
+    actual_effort: 5.5h
+    notes: |
+      Core functionality complete. Remaining items for follow-up:
+      - Integration tests for CLI interaction
+      - Manual testing of user workflow
+      Main implementation fully functional and tested.
+
+  - task_id: TASK-20251028-03
+    spec_id: SPEC-TRANSLATION-001
+    title: "StreamingTranslator Failure Handling"
+    completed_at: "2025-10-28T16:00:00Z"
+    outcome: |
+      Introduced deterministic chunk generation with retry/skip policy:
+      - Amended translation spec with chunk generator algorithm and retry limits
+      - Implemented tests covering chunk boundary calculations and retry exhaustion
+      - Refactored StreamingTranslator.translate to use generator for chunks
+      - Added chunk index tracking and configurable retry logic
+      - Implemented explicit exceptions for permanent failures
+      - Added metrics logging for translation outcomes
+    test_results: |
+      ✓ All tests pass with new chunk generator and retry tests
+      ✓ Coverage for new branches achieved
+      ✓ Negative paths (retry exhaustion, API errors) verified
+      ✓ Logging captures chunk outcomes correctly
+    estimated_effort: 4h
+    actual_effort: 4.5h
+    notes: |
+      All DoD items completed:
+      - ✓ Spec extended with chunking/retry design
+      - ✓ Tests fail prior to implementation (RED phase)
+      - ✓ Implementation passes all tests (GREEN phase)
+      - ✓ Coverage maintained
+      - ✓ Operational docs updated with retry behaviour
+
+  - task_id: TASK-20251028-02
+    spec_id: SPEC-TEXT-PREP-001
+    title: "TextPreprocessor Robustness Fix"
+    completed_at: "2025-10-28T14:00:00Z"
+    outcome: |
+      Fixed double-indentation and improved error handling:
+      - Extended spec ACs to cover "C" command path and error reporting
+      - Added tests for "C" command flow and clipboard exception handling
+      - Updated TextPreprocessor to avoid extra indentation
+      - Centralized exception handling with warning logs
+      - Ensured file writes remain idempotent
+    test_results: |
+      ✓ All tests pass including new "C" command and clipboard failure tests
+      ✓ Coverage maintained at ≥91%
+      ✓ Logging verified via captured logs
+      ✓ Double-indentation issue resolved
+    estimated_effort: 3h
+    actual_effort: 2.5h
+    notes: |
+      All acceptance criteria met:
+      - ✓ Spec updated with new ACs
+      - ✓ New failing tests implemented (RED)
+      - ✓ Implementation passes all tests (GREEN)
+      - ✓ Coverage maintained
+      - ✓ Prompts unchanged (no README update needed)
+
+  - task_id: TASK-20251028-01
+    spec_id: SPEC-TRANSLATION-001
+    title: "Spec & Traceability Alignment"
+    completed_at: "2025-10-28T12:00:00Z"
+    outcome: |
+      Established accurate spec-to-test traceability:
+      - Inventoried existing tests and assigned TEST-IDs mapped to each AC
+      - Updated translation spec to reflect StreamingTranslator surface
+      - Created token-counter spec with singleton and thread safety requirements
+      - Expanded tracing sections in affected specs
+      - Added Trace comments to relevant modules and test cases
+    test_results: |
+      ✓ All tests pass (uv run pytest)
+      ✓ Annotation changes are format-only
+      ✓ All specs updated with current API surface
+      ✓ No outstanding ambiguities found
+    estimated_effort: 2h
+    actual_effort: 2h
+    notes: |
+      Documentation and traceability foundation complete:
+      - ✓ All affected specs updated
+      - ✓ New TokenCounter spec committed
+      - ✓ Source files include Trace annotations
+      - ✓ No outstanding ambiguities
+      - ✓ Tests pass after annotation changes
