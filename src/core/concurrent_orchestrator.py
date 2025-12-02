@@ -160,7 +160,7 @@ class ConcurrentTranslationOrchestrator:
             )
 
         logger.info(
-            "Concurrent translation completed: " "%d successes, %d failures, %.2fs",
+            "Concurrent translation completed: %d successes, %d failures, %.2fs",
             final_metrics.successes,
             final_metrics.failures,
             duration,
