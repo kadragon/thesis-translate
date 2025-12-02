@@ -1,0 +1,10 @@
+# Task Backlog
+# Pending tasks sorted by priority (highest first)
+# Format: Each task must be a list item under pending_tasks with proper 2-space indentation
+
+pending_tasks: []
+
+# Notes:
+# - Tasks are moved to current.yaml when work begins
+# - Only one task should be in current.yaml at a time
+# - Completed tasks are moved to done.yaml
