@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+import src.config as cfg
+
 # Ensure required environment variables are present before modules import config.
 # Values are test-friendly defaults and can be overridden within individual tests.
 _TEST_ROOT = Path(__file__).parent
@@ -33,6 +35,4 @@ for key, value in _DEFAULT_ENV.items():
 def reset_config_module():
     """Ensure src.config reflects current env between tests."""
     yield
-    import src.config as cfg
-
     importlib.reload(cfg)

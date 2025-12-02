@@ -64,12 +64,12 @@ TRANSLATION_RETRY_BACKOFF_SECONDS: float = _env_values[
 ]  # type: ignore[assignment]
 
 __all__: tuple[str, ...] = (
-    "OPENAI_MODEL",
-    "TEMPERATURE",
-    "MAX_TOKEN_LENGTH",
-    "INPUT_FILE",
-    "OUTPUT_FILE",
     "GLOSSARY_FILE",
+    "INPUT_FILE",
+    "MAX_TOKEN_LENGTH",
+    "OPENAI_MODEL",
+    "OUTPUT_FILE",
+    "TEMPERATURE",
     "TRANSLATION_MAX_RETRIES",
     "TRANSLATION_RETRY_BACKOFF_SECONDS",
 )
