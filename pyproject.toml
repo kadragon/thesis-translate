@@ -31,7 +31,7 @@ line-length = 88
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "DJ", "EM", "ICN", "G", "INP", "PIE", "T20", "PYI", "RET", "RSE", "RUF", "SIM", "TID", "TCH", "INT", "ARG", "PTH", "ERA", "PD", "PGH", "PL", "TRY", "FLY", "NPY", "AIR", "PERF", "FURB", "LOG", "SLOT"]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "EM", "ICN", "G", "INP", "PIE", "T20", "PYI", "RET", "RSE", "RUF", "SIM", "TID", "TCH", "INT", "ARG", "PTH", "ERA", "PGH", "PL", "TRY", "FLY", "PERF", "FURB", "LOG", "SLOT"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -63,3 +63,7 @@ warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
 strict_equality = false
+
+[[tool.mypy.overrides]]
+module = "clipboard"
+ignore_missing_imports = true
