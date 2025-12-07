@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Iterator as TypingIterator
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -255,7 +255,7 @@ class StreamingTranslator:
         Results are collected in original chunk order.
         """
         # Dictionary to store futures and results by chunk_index
-        futures_map: dict[int, Future[str | None]] = {}
+        future_to_chunk: dict[Future[str | None], int] = {}
         translated_results: dict[int, str] = {}
         successes = 0
         failures = 0
@@ -264,11 +264,12 @@ class StreamingTranslator:
             # Submit all chunks for parallel processing
             for chunk_index, chunk_text in chunks:
                 future = executor.submit(self._translate_chunk, chunk_index, chunk_text)
-                futures_map[chunk_index] = future
-                logger.info("submitted chunk=%d/%d", chunk_index, total_chunks)
+                future_to_chunk[future] = chunk_index
+            logger.info("submitted %d chunks for translation", total_chunks)
 
             # Collect results as they complete
-            for chunk_index, future in futures_map.items():
+            for future in as_completed(future_to_chunk):
+                chunk_index = future_to_chunk[future]
                 try:
                     translation = future.result()
                     if translation:
