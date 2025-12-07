@@ -3,6 +3,18 @@
 # IMPORTANT: Each task must be properly indented under completed_tasks list
 
 completed_tasks:
+  - task_id: TASK-20251207-02
+    spec_id: SPEC-PARALLEL-CHUNKS-001
+    title: "Provide test-safe default OPENAI_API_KEY"
+    completed_at: "2025-12-07T06:10:00Z"
+    outcome: |
+      Added a harmless default OPENAI_API_KEY for test runs via pytest conftest to prevent OpenAI client initialization failures when no secret is configured. Updated trace metadata to include this task and spec linkage.
+    test_results: |
+      ✓ uv run pytest (all 43 tests): 42 passed, 1 skipped
+    estimated_effort: 0.3h
+    actual_effort: 0.2h
+    notes: |
+      Change is test-only; production env values still override because setdefault preserves caller-provided secrets.
   - task_id: TASK-20251207-01
     spec_id: SPEC-PARALLEL-CHUNKS-001
     title: "Implement parallel chunk translation"

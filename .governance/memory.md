@@ -2,6 +2,8 @@
 
 ## Recent Changes
 
+- 2025-12-07 (SPEC-PARALLEL-CHUNKS-001 / TASK-20251207-02): Added a safe default `OPENAI_API_KEY` in `tests/conftest.py` using `setdefault` so OpenAI client instantiation during tests no longer fails when the env lacks a key. This does not override real secrets. All tests now pass via `uv run pytest`.
+
 - 2025-12-07 (SPEC-PARALLEL-CHUNKS-001 / TASK-20251207-01): Implemented parallel chunk translation using ThreadPoolExecutor. Chunks are now processed concurrently (max_workers=3 by default) to reduce total translation time. Added `TRANSLATION_MAX_WORKERS` config (clamped 1-10). Removed file monitoring and user-prompted translation features (concurrent-translation, user-prompted-translation specs and implementations deleted). Sequential mode (max_workers=1) maintained for backward compatibility. All tests pass.
 
 - 2025-12-02: Migrated task tracking from Markdown to YAML format per CLAUDE.md standards. Created `backlog.yaml`, `current.yaml`, and `done.yaml` with proper indentation structure to prevent parsing errors. Migrated 5 completed tasks from legacy `.md` files. This ensures compliance with SDD×TDD governance requirements and prevents YAML indentation errors identified in code review.
