@@ -3,6 +3,41 @@
 # IMPORTANT: Each task must be properly indented under completed_tasks list
 
 completed_tasks:
+  - task_id: TASK-20251207-01
+    spec_id: SPEC-PARALLEL-CHUNKS-001
+    title: "Implement parallel chunk translation"
+    completed_at: "2025-12-07T01:00:00Z"
+    outcome: |
+      Successfully implemented parallel chunk translation to reduce translation time:
+      - Added TRANSLATION_MAX_WORKERS config variable (default 3, clamped 1-10)
+      - Modified StreamingTranslator to use ThreadPoolExecutor for parallel processing
+      - Implemented _translate_parallel() for concurrent chunk processing
+      - Preserved _translate_sequential() for backward compatibility (max_workers=1)
+      - Ensured chunk order is preserved in output regardless of completion order
+      - Removed file monitoring features (concurrent-translation, user-prompted-translation)
+      - Deleted related source files, tests, and specs
+      - Updated TextPreprocessor to remove orchestrator integration
+    test_results: |
+      ✓ All existing tests pass (36 passed, 1 skipped)
+      ✓ New parallel chunk tests pass (6 tests)
+      ✓ Coverage maintained at 90%+
+      ✓ Sequential mode backward compatible
+      ✓ Chunk order preserved in parallel mode
+    estimated_effort: 4h
+    actual_effort: 3.5h
+    notes: |
+      All acceptance criteria met:
+      - ✓ AC-1: Multiple chunks processed concurrently up to max_workers
+      - ✓ AC-2: Next chunk starts immediately when one completes
+      - ✓ AC-3: Results collected in original chunk order
+      - ✓ AC-4: Failures logged, other chunks continue
+      - ✓ AC-5: Metrics reflect parallel processing time
+      - ✓ AC-6: max_workers=1 identical to sequential mode
+      - ✓ AC-7: Errors in one thread don't affect others
+      - ✓ .env and .env.example updated
+      - ✓ conftest.py updated with TRANSLATION_MAX_WORKERS
+      - ✓ memory.md updated
+
   - task_id: TASK-20251117-01
     spec_id: SPEC-CONFIG-001
     title: "Env-based Required Config"

@@ -21,6 +21,7 @@ _DEFAULT_ENV = {
     "GLOSSARY_FILE": str(_TEST_ROOT / "test_glossary.json"),
     "TRANSLATION_MAX_RETRIES": "2",
     "TRANSLATION_RETRY_BACKOFF_SECONDS": "0.5",
+    "TRANSLATION_MAX_WORKERS": "3",
     # API key left untouched to avoid clobbering real secrets; code that needs it
     # relies on the user's environment or .env file.
 }
