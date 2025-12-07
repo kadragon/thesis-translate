@@ -1,11 +1,13 @@
 """Translation module for academic papers using OpenAI Chat Completions API."""
 # GENERATED FROM SPEC-TRANSLATION-001
+# MODIFIED FOR SPEC-PARALLEL-CHUNKS-001
 
 from __future__ import annotations
 
 import logging
 import time
 from collections.abc import Iterator as TypingIterator
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -51,13 +53,14 @@ class PermanentTranslationError(Exception):
 class StreamingTranslator:
     """Translator for academic papers using OpenAI Chat Completions API."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         input_file: str,
         output_file: str = config.OUTPUT_FILE,
         max_token_length: int = config.MAX_TOKEN_LENGTH,
         max_retries: int = config.TRANSLATION_MAX_RETRIES,
         retry_backoff_seconds: float = config.TRANSLATION_RETRY_BACKOFF_SECONDS,
+        max_workers: int = config.TRANSLATION_MAX_WORKERS,
     ) -> None:
         """Initialize translator dependencies and configuration."""
         self.client: OpenAI = OpenAI()
@@ -66,6 +69,7 @@ class StreamingTranslator:
         self.max_token_length: int = max_token_length
         self.max_retries: int = max(0, max_retries)
         self.retry_backoff_seconds: float = max(0.0, retry_backoff_seconds)
+        self.max_workers: int = max(1, min(10, max_workers))  # Clamp between 1 and 10
         self.config: TranslationConfig = TranslationConfig()
         self.token_counter: TokenCounter = TokenCounter()
 
@@ -169,8 +173,13 @@ class StreamingTranslator:
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC9
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC10
     # Trace: SPEC-REFACTOR-DRY-001, AC-1, AC-2
+    # Trace: SPEC-PARALLEL-CHUNKS-001, AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7
     def translate(self) -> TranslationRunResult:
-        """Translate the input file and write results while tracking metrics."""
+        """Translate the input file and write results while tracking metrics.
+
+        Uses parallel processing when max_workers > 1, sequential when max_workers == 1.
+        Results are written in original chunk order regardless of completion order.
+        """
         start_time = time.perf_counter()
 
         try:
@@ -183,8 +192,38 @@ class StreamingTranslator:
         # Materialize chunks for progress tracking
         chunks = list(self.chunk_generator(lines))
         total_chunks = len(chunks)
-        logger.info("총 %d개의 번역 청크를 처리합니다.", total_chunks)
+        logger.info(
+            "총 %d개의 번역 청크를 처리합니다 (max_workers=%d).",
+            total_chunks,
+            self.max_workers,
+        )
 
+        if self.max_workers == 1:
+            # Sequential mode (backward compatible)
+            result = self._translate_sequential(chunks, total_chunks)
+        else:
+            # Parallel mode
+            result = self._translate_parallel(chunks, total_chunks)
+
+        duration = time.perf_counter() - start_time
+        logger.info(
+            "번역 완료: successes=%d, failures=%d, duration=%.2fs, output=%s",
+            result.successes,
+            result.failures,
+            duration,
+            self.output_file,
+        )
+
+        return TranslationRunResult(
+            successes=result.successes,
+            failures=result.failures,
+            duration_seconds=duration,
+        )
+
+    def _translate_sequential(
+        self, chunks: list[tuple[int, str]], total_chunks: int
+    ) -> TranslationRunResult:
+        """Sequential translation (original behavior)."""
         translated_content: list[str] = []
         successes = 0
         failures = 0
@@ -201,19 +240,63 @@ class StreamingTranslator:
         with Path(self.output_file).open("w", encoding="utf-8") as file:
             file.writelines(content + "\n\n" for content in translated_content)
 
-        duration = time.perf_counter() - start_time
-        logger.info(
-            "번역 완료: successes=%d, failures=%d, duration=%.2fs, output=%s",
-            successes,
-            failures,
-            duration,
-            self.output_file,
+        return TranslationRunResult(
+            successes=successes,
+            failures=failures,
+            duration_seconds=0.0,  # Duration calculated by caller
         )
+
+    def _translate_parallel(
+        self, chunks: list[tuple[int, str]], total_chunks: int
+    ) -> TranslationRunResult:
+        """Parallel translation using ThreadPoolExecutor.
+
+        Chunks are processed in parallel up to max_workers limit.
+        Results are collected in original chunk order.
+        """
+        # Dictionary to store futures and results by chunk_index
+        future_to_chunk: dict[Future[str | None], int] = {}
+        translated_results: dict[int, str] = {}
+        successes = 0
+        failures = 0
+
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all chunks for parallel processing
+            for chunk_index, chunk_text in chunks:
+                future = executor.submit(self._translate_chunk, chunk_index, chunk_text)
+                future_to_chunk[future] = chunk_index
+            logger.info("submitted %d chunks for translation", total_chunks)
+
+            # Collect results as they complete
+            for future in as_completed(future_to_chunk):
+                chunk_index = future_to_chunk[future]
+                try:
+                    translation = future.result()
+                    if translation:
+                        translated_results[chunk_index] = translation
+                        successes += 1
+                        logger.info("chunk=%d completed successfully", chunk_index)
+                    else:
+                        failures += 1
+                        logger.warning("chunk=%d failed", chunk_index)
+                except Exception:
+                    logger.exception("chunk=%d raised exception", chunk_index)
+                    failures += 1
+
+        # Write results in original chunk order
+        translated_content = [
+            translated_results[chunk_index]
+            for chunk_index, _ in chunks
+            if chunk_index in translated_results
+        ]
+
+        with Path(self.output_file).open("w", encoding="utf-8") as file:
+            file.writelines(content + "\n\n" for content in translated_content)
 
         return TranslationRunResult(
             successes=successes,
             failures=failures,
-            duration_seconds=duration,
+            duration_seconds=0.0,  # Duration calculated by caller
         )
 
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC8

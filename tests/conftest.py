@@ -1,6 +1,6 @@
 """Pytest configuration for env-based settings.
 
-Trace: SPEC-CONFIG-001, TASK-20251117-01
+Trace: SPEC-CONFIG-001, SPEC-PARALLEL-CHUNKS-001, TASK-20251117-01, TASK-20251207-02
 """
 
 import importlib
@@ -21,8 +21,10 @@ _DEFAULT_ENV = {
     "GLOSSARY_FILE": str(_TEST_ROOT / "test_glossary.json"),
     "TRANSLATION_MAX_RETRIES": "2",
     "TRANSLATION_RETRY_BACKOFF_SECONDS": "0.5",
-    # API key left untouched to avoid clobbering real secrets; code that needs it
-    # relies on the user's environment or .env file.
+    "TRANSLATION_MAX_WORKERS": "3",
+    # Safe test default so OpenAI client can instantiate during unit tests.
+    # setdefault() ensures we never override a real secret in the caller env.
+    "OPENAI_API_KEY": "test-api-key",
 }
 
 for key, value in _DEFAULT_ENV.items():

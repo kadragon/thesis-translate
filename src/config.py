@@ -48,6 +48,7 @@ _REQUIRED_VARS: dict[str, Callable[[str], object]] = {
     "GLOSSARY_FILE": str,
     "TRANSLATION_MAX_RETRIES": int,
     "TRANSLATION_RETRY_BACKOFF_SECONDS": float,
+    "TRANSLATION_MAX_WORKERS": int,
 }
 
 _env_values = _require_env(_REQUIRED_VARS)
@@ -62,6 +63,9 @@ TRANSLATION_MAX_RETRIES: int = _env_values["TRANSLATION_MAX_RETRIES"]  # type: i
 TRANSLATION_RETRY_BACKOFF_SECONDS: float = _env_values[
     "TRANSLATION_RETRY_BACKOFF_SECONDS"
 ]  # type: ignore[assignment]
+_raw_max_workers = _env_values["TRANSLATION_MAX_WORKERS"]
+assert isinstance(_raw_max_workers, int)
+TRANSLATION_MAX_WORKERS: int = max(1, min(10, _raw_max_workers))
 
 __all__: tuple[str, ...] = (
     "GLOSSARY_FILE",
@@ -71,5 +75,6 @@ __all__: tuple[str, ...] = (
     "OUTPUT_FILE",
     "TEMPERATURE",
     "TRANSLATION_MAX_RETRIES",
+    "TRANSLATION_MAX_WORKERS",
     "TRANSLATION_RETRY_BACKOFF_SECONDS",
 )
