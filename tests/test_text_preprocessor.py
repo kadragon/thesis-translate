@@ -198,8 +198,7 @@ class TestTextPreprocessor:
         # Then
         assert preprocessor.page_number == expected_final_page
         write_calls = [call.args[0] for call in mock_file().write.call_args_list]
-        assert "  p.100\n\n" in write_calls
-        assert "  p.101\n\n" in write_calls
+        assert write_calls == ["  p.100\n\n", "  p.101\n\n"]
 
     @patch("builtins.input")
     def test_run_invalid_page_number_retry(self, mock_input):
