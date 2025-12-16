@@ -175,3 +175,47 @@ class TestTextPreprocessor:
         assert isinstance(preprocessor.text, FaultyText)
         warning_message = mock_logger.warning.call_args[0][0]
         assert "텍스트 정리" in warning_message
+
+    @patch("builtins.input")
+    @patch("pathlib.Path.open", new_callable=mock_open)
+    def test_run_page_number_addition(self, mock_file, mock_input):
+        """Test that 'E' command adds page number and increments counter"""
+        # Given
+        initial_page = 100
+        expected_final_page = 102  # Started at 100, incremented twice
+
+        mock_input.side_effect = [
+            str(initial_page),  # Initial page number
+            "E",  # Add page number command
+            "E",  # Add page number command again
+            "B",  # Quit
+        ]
+        preprocessor = TextPreprocessor()
+
+        # When
+        preprocessor.run()
+
+        # Then
+        assert preprocessor.page_number == expected_final_page
+        write_calls = [call.args[0] for call in mock_file().write.call_args_list]
+        assert write_calls == ["  p.100\n\n", "  p.101\n\n"]
+
+    @patch("builtins.input")
+    def test_run_invalid_page_number_retry(self, mock_input):
+        """Test that invalid page number input triggers retry"""
+        # Given
+        valid_page_number = 42
+
+        mock_input.side_effect = [
+            "not a number",  # Invalid input
+            "abc",  # Another invalid input
+            str(valid_page_number),  # Valid input
+            "B",  # Quit
+        ]
+        preprocessor = TextPreprocessor()
+
+        # When
+        preprocessor.run()
+
+        # Then
+        assert preprocessor.page_number == valid_page_number

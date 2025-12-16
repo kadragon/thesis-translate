@@ -167,3 +167,4 @@ glossary.json
 .translation_state*.json
 
 .ruff_cache/
+coverage.json

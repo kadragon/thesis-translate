@@ -259,3 +259,166 @@ class TestTranslator:
             "successes=1" in record.message and "failures=1" in record.message
             for record in caplog.records
         )
+
+    def test_chunk_generator_single_line_exceeds_limit(self, caplog):
+        """Test that single line exceeding token limit is yielded as-is with warning"""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy", max_token_length=10)
+
+        lines = ["very long single line that exceeds the limit\n"]
+
+        with (
+            patch.object(
+                translator.token_counter,
+                "count_tokens",
+                return_value=100,  # Exceeds max_token_length of 10
+            ),
+            caplog.at_level("WARNING"),
+        ):
+            chunks = list(translator.chunk_generator(lines))
+
+        assert len(chunks) == 1
+        assert chunks[0] == (1, "very long single line that exceeds the limit\n")
+        assert any("single line over limit" in message for message in caplog.messages)
+
+    def test_invoke_model_empty_response(self):
+        """Test that empty API response raises PermanentTranslationError"""
+        config = _build_config()
+        mock_client = Mock()
+        mock_client.chat.completions.create.return_value = Mock(
+            choices=[Mock(message=Mock(content=None))]
+        )
+
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI", return_value=mock_client),
+        ):
+            translator = StreamingTranslator(input_file="dummy")
+
+        with pytest.raises(PermanentTranslationError):
+            translator._invoke_model(1, "test chunk")
+
+    def test_translate_chunk_retry_with_backoff(self):
+        """Test that retry logic includes sleep backoff when configured"""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(
+                input_file="dummy", max_retries=2, retry_backoff_seconds=0.5
+            )
+
+        responses = [
+            TransientTranslationError("first fail"),
+            "success",
+        ]
+
+        def fake_invoke(_chunk_index: int, _chunk_text: str):
+            result = responses.pop(0)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        with (
+            patch.object(translator, "_invoke_model", side_effect=fake_invoke),
+            patch("src.core.streaming_translator.time.sleep") as mock_sleep,
+        ):
+            result = translator._translate_chunk(1, "test")
+
+        assert result == "success"
+        mock_sleep.assert_called_once_with(0.5)
+
+    def test_translate_parallel_exception_handling(self, tmp_path, caplog):
+        """Test that parallel mode handles exceptions raised by futures"""
+        input_file = tmp_path / "input.txt"
+        output_file = tmp_path / "output.txt"
+        # Create two separate lines that will become two chunks
+        input_file.write_text("line1\nline2\n")
+
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(
+                input_file=str(input_file),
+                output_file=str(output_file),
+                max_token_length=5,  # Small enough to create 2 chunks
+                max_workers=2,
+            )
+
+        def fake_translate(chunk_index: int, _chunk_text: str):
+            if chunk_index == 1:
+                error_message = "Unexpected error"
+                raise RuntimeError(error_message)
+            return "success"
+
+        with (
+            patch.object(
+                translator.token_counter,
+                "count_tokens",
+                side_effect=lambda text: len(text.splitlines()) * 5,
+            ),
+            patch.object(translator, "_translate_chunk", side_effect=fake_translate),
+            caplog.at_level("ERROR"),
+        ):
+            metrics = translator.translate()
+
+        assert metrics.failures == 1
+        assert metrics.successes == 1
+        assert any("raised exception" in message for message in caplog.messages)
+
+    def test_translate_sequential_failure_counter(self, tmp_path):
+        """Test that sequential mode increments failure counter correctly"""
+        input_file = tmp_path / "input.txt"
+        output_file = tmp_path / "output.txt"
+        # Write text that will create exactly 2 chunks
+        input_file.write_text("line1\nline2\n")
+
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(
+                input_file=str(input_file),
+                output_file=str(output_file),
+                max_token_length=5,
+                max_workers=1,  # Sequential mode
+            )
+
+        failed_chunk_index = 2
+
+        def fake_translate(chunk_index: int, _chunk_text: str):
+            # Fail on chunk 2, succeed on chunk 1
+            if chunk_index == failed_chunk_index:
+                return None
+            return f"success{chunk_index}"
+
+        with (
+            patch.object(
+                translator.token_counter,
+                "count_tokens",
+                side_effect=lambda text: len(text.splitlines()) * 5,
+            ),
+            patch.object(translator, "_translate_chunk", side_effect=fake_translate),
+        ):
+            metrics = translator.translate()
+
+        assert metrics.successes == 1
+        assert metrics.failures == 1
