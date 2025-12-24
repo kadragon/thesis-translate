@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import time
 from collections.abc import Iterator as TypingIterator
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
@@ -74,32 +75,81 @@ class StreamingTranslator:
         self.token_counter: TokenCounter = TokenCounter()
 
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC2
+    # Trace: SPEC-BALANCED-CHUNKS-001, AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7
     def chunk_generator(self, lines: list[str]) -> ChunkIterator[tuple[int, str]]:
-        """Yield chunk indices and text while respecting the token limit."""
+        """Yield chunks using balanced distribution for parallel efficiency.
+
+        Phase 1: Calculate total tokens across all lines
+        Phase 2: Calculate num_chunks and target_chunk_size
+        Phase 3: Distribute lines evenly across chunks
+        """
+
+        # Phase 1: Calculate total tokens and individual line tokens
+        line_tokens: list[int] = []
+        for line in lines:
+            tokens = self.token_counter.count_tokens(line)
+            line_tokens.append(tokens)
+
+        total_tokens = sum(line_tokens)
+
+        # Phase 2: Calculate target distribution
+        if total_tokens <= self.max_token_length:
+            # AC-7: Single chunk case
+            all_lines = "".join(lines)
+            logger.info("chunk=1 boundary len=%d", len(all_lines))
+            yield 1, all_lines
+            return
+
+        num_chunks = math.ceil(total_tokens / self.max_token_length)
+        target_chunk_size = total_tokens / num_chunks
+
+        # Phase 3: Distribute lines into balanced chunks
         buffer = ""
+        current_chunk_tokens = 0
         chunk_index = 0
 
-        for line in lines:
-            candidate = buffer + line if buffer else line
-            token_count = self.token_counter.count_tokens(candidate)
+        for i, line in enumerate(lines):
+            line_token_count = line_tokens[i]
 
-            if buffer and token_count > self.max_token_length:
-                chunk_index += 1
-                logger.info("chunk=%d boundary len=%d", chunk_index, len(buffer))
-                yield chunk_index, buffer
-                buffer = line
-            elif not buffer and token_count > self.max_token_length:
+            # Handle oversized single line (AC-6)
+            if not buffer and line_token_count > self.max_token_length:
                 chunk_index += 1
                 logger.warning(
                     "chunk=%d single line over limit len=%d",
                     chunk_index,
-                    len(candidate),
+                    len(line),
                 )
-                yield chunk_index, candidate
-                buffer = ""
-            else:
-                buffer = candidate
+                yield chunk_index, line
+                continue
 
+            # Check if adding this line would exceed target (and we have content)
+            candidate_tokens = current_chunk_tokens + line_token_count
+
+            # Finalize chunk if:
+            # 1. We have content in buffer AND
+            # 2. We've reached/exceeded target OR would exceed it significantly
+            if buffer and candidate_tokens >= target_chunk_size:
+                # Only finalize if not on last chunk or significantly exceeding
+                chunks_remaining = num_chunks - chunk_index
+                should_finalize = (
+                    chunks_remaining > 1 or candidate_tokens > self.max_token_length
+                )
+                if should_finalize:
+                    chunk_index += 1
+                    logger.info("chunk=%d boundary len=%d", chunk_index, len(buffer))
+                    yield chunk_index, buffer
+                    buffer = line
+                    current_chunk_tokens = line_token_count
+                else:
+                    # Last chunk, accumulate remaining lines
+                    buffer += line
+                    current_chunk_tokens = candidate_tokens
+            else:
+                # Accumulate line
+                buffer += line
+                current_chunk_tokens = candidate_tokens
+
+        # Yield final buffer if any content remains
         if buffer:
             chunk_index += 1
             logger.info("chunk=%d boundary len=%d", chunk_index, len(buffer))
