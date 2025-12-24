@@ -85,11 +85,7 @@ class StreamingTranslator:
         """
 
         # Phase 1: Calculate total tokens and individual line tokens
-        line_tokens: list[int] = []
-        for line in lines:
-            tokens = self.token_counter.count_tokens(line)
-            line_tokens.append(tokens)
-
+        line_tokens = [self.token_counter.count_tokens(line) for line in lines]
         total_tokens = sum(line_tokens)
 
         # Phase 2: Calculate target distribution

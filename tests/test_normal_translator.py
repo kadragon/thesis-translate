@@ -449,14 +449,11 @@ class TestBalancedChunkDistribution:
         total_tokens = sum(token_counts)
 
         def count_tokens_mock(text: str) -> int:
-            # Single line
-            if text in lines:
+            # Mock only handles single-line lookups as used by generator
+            try:
                 return token_counts[lines.index(text)]
-            # Multi-line chunk
-            if "\n" in text:
-                num_lines = text.count("\n")
-                return sum(token_counts[:num_lines])
-            return 0
+            except ValueError:
+                return 0
 
         with patch.object(
             translator.token_counter, "count_tokens", side_effect=count_tokens_mock
