@@ -559,6 +559,58 @@ class TestBalancedChunkDistribution:
         assert chunks[1] == (2, "normal line\n")
         assert any("single line over limit" in message for message in caplog.messages)
 
+    # Trace: SPEC-BALANCED-CHUNKS-001, AC-6 (edge case)
+    def test_balanced_oversized_line_after_buffer(self, caplog):
+        """AC-6 edge: Oversized line after buffered content yields with warning"""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy", max_token_length=10000)
+
+        # Scenario: buffer has 5000 tokens, then oversized line with 25000 tokens
+        lines = ["normal1\n", "normal2\n", "oversized line\n", "normal3\n"]
+
+        def count_tokens_mock(text):
+            if "oversized line" in text:
+                return 25000  # Exceeds max (10000)
+            return len(text.splitlines()) * 2500  # Each normal line: 2500 tokens
+
+        with (
+            patch.object(
+                translator.token_counter,
+                "count_tokens",
+                side_effect=count_tokens_mock,
+            ),
+            caplog.at_level("WARNING"),
+        ):
+            chunks = list(translator.chunk_generator(lines))
+
+        # Should create 3 chunks:
+        # 1. normal1+normal2 (5000 tokens)
+        # 2. oversized line alone (25000 tokens) with warning
+        # 3. normal3 (2500 tokens)
+        expected_chunks = 3
+        assert len(chunks) == expected_chunks
+
+        # Verify no chunk exceeds max_token_length (except the warned oversized one)
+        oversized_chunk_found = False
+        for _chunk_idx, chunk_text in chunks:
+            tokens = count_tokens_mock(chunk_text)
+            if tokens > translator.max_token_length:
+                # This should only happen for the oversized line chunk
+                assert "oversized line" in chunk_text
+                assert chunk_text.strip() == "oversized line"  # Should be standalone
+                oversized_chunk_found = True
+
+        assert oversized_chunk_found, "Oversized chunk should exist"
+        assert any(
+            "single line over limit" in message for message in caplog.messages
+        ), "Warning should be logged for oversized line"
+
     # Trace: SPEC-BALANCED-CHUNKS-001, AC-3, AC-4
     def test_balanced_three_chunks(self):
         """Test balanced distribution with 3 chunks"""

@@ -138,8 +138,21 @@ class StreamingTranslator:
                     chunk_index += 1
                     logger.info("chunk=%d boundary len=%d", chunk_index, len(buffer))
                     yield chunk_index, buffer
-                    buffer = line
-                    current_chunk_tokens = line_token_count
+
+                    # Check if the next line is oversized before buffering
+                    if line_token_count > self.max_token_length:
+                        chunk_index += 1
+                        logger.warning(
+                            "chunk=%d single line over limit len=%d",
+                            chunk_index,
+                            len(line),
+                        )
+                        yield chunk_index, line
+                        buffer = ""
+                        current_chunk_tokens = 0
+                    else:
+                        buffer = line
+                        current_chunk_tokens = line_token_count
                 else:
                     # Last chunk, accumulate remaining lines
                     buffer += line
