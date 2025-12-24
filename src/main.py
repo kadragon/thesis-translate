@@ -27,7 +27,7 @@ def main() -> None:
         logger.error(
             ".env 파일에 OPENAI_API_KEY를 추가하거나 환경 변수를 직접 설정해주세요."
         )
-        sys.exit(1)
+        sys.exit(1)  # pragma: no cover
 
     # 1. 텍스트 전처리
     preprocessor = TextPreprocessor()

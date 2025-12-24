@@ -76,14 +76,10 @@ class TextPreprocessor:
         while True:
             if self.page_number is None:
                 while True:
-                    try:
-                        start_page = input("시작 페이지 번호를 입력하세요: ")
-                        if start_page.isnumeric():
-                            self.page_number = int(start_page)
-                            break
-
-                    except ValueError:
-                        pass
+                    start_page = input("시작 페이지 번호를 입력하세요: ")
+                    if start_page.isnumeric():
+                        self.page_number = int(start_page)
+                        break
 
             menu_prompt = (
                 "번역을 진행하시겠습니까? "

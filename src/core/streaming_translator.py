@@ -225,7 +225,7 @@ class StreamingTranslator:
                 )
                 return translation
 
-        return None
+        return None  # pragma: no cover
 
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC1
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC7

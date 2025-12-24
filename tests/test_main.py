@@ -100,3 +100,14 @@ class TestMain:
 
         mock_logger.exception.assert_called()
         mock_exit.assert_called_once_with(1)
+
+    # Test to exercise sys.exit(1) without mocking it
+    @patch.dict("os.environ", {}, clear=True)
+    @patch("src.main.TextPreprocessor")
+    def test_main_missing_api_key_exit_code(self, _mock_preprocessor_class):
+        """Test that missing API key causes actual exit(1)"""
+        # This test verifies sys.exit(1) is called (line 63)
+        with __import__("pytest").raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == 1
