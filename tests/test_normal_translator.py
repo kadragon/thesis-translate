@@ -23,8 +23,9 @@ def _build_config(prompt: str = "Translate: {text}") -> Mock:
 
 class TestTranslator:
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC2
+    # Updated for SPEC-BALANCED-CHUNKS-001: balanced distribution changes
     def test_chunk_generator_deterministic(self):
-        """AC-2: chunk generator yields deterministic order"""
+        """AC-2: deterministic order with balanced distribution"""
         config = _build_config()
         with (
             patch(
@@ -43,9 +44,12 @@ class TestTranslator:
         ):
             chunks = list(translator.chunk_generator(lines))
 
+        # Balanced chunking: 15 tokens total, max 10 → 2 chunks with target ~7.5 each
+        # Chunk 1: first (5 tokens)
+        # Chunk 2: second + third (10 tokens)
         assert chunks == [
-            (1, "first\nsecond\n"),
-            (2, "third\n"),
+            (1, "first\n"),
+            (2, "second\nthird\n"),
         ]
 
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC3
@@ -422,3 +426,221 @@ class TestTranslator:
 
         assert metrics.successes == 1
         assert metrics.failures == 1
+
+
+class TestBalancedChunkDistribution:
+    """Tests for SPEC-BALANCED-CHUNKS-001"""
+
+    # Trace: SPEC-BALANCED-CHUNKS-001, AC-1, AC-2, AC-3, AC-4, AC-5
+    def test_balanced_chunk_distribution(self):
+        """AC-1 to AC-5: Chunks distributed evenly for parallel efficiency"""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy", max_token_length=20000)
+
+        # Simulate 27,707 tokens (similar to user's example)
+        lines = [f"line{i}\n" for i in range(14)]
+        token_counts = [2000] * 13 + [1707]  # Total = 27,707
+        total_tokens = sum(token_counts)
+
+        def count_tokens_mock(text: str) -> int:
+            # Mock only handles single-line lookups as used by generator
+            try:
+                return token_counts[lines.index(text)]
+            except ValueError:
+                return 0
+
+        with patch.object(
+            translator.token_counter, "count_tokens", side_effect=count_tokens_mock
+        ):
+            chunks = list(translator.chunk_generator(lines))
+
+        # Should create 2 chunks with balanced distribution
+        expected_chunks = 2
+        assert len(chunks) == expected_chunks
+
+        # Extract chunk texts (indices unused)
+        _, chunk_1_text = chunks[0]
+        _, chunk_2_text = chunks[1]
+
+        # Count tokens in each chunk
+        chunk_1_lines = chunk_1_text.strip().split("\n")
+        chunk_2_lines = chunk_2_text.strip().split("\n")
+
+        chunk_1_tokens = sum(token_counts[i] for i in range(len(chunk_1_lines)))
+        chunk_2_tokens = sum(
+            token_counts[len(chunk_1_lines) + i] for i in range(len(chunk_2_lines))
+        )
+
+        # Target should be ~13,853 tokens per chunk
+        target_chunk_size = total_tokens / expected_chunks
+
+        # Chunks should be balanced (within 30% of target)
+        max_variance = 0.3
+        assert (
+            abs(chunk_1_tokens - target_chunk_size) / target_chunk_size < max_variance
+        )
+        assert (
+            abs(chunk_2_tokens - target_chunk_size) / target_chunk_size < max_variance
+        )
+
+        # Neither chunk should be < 70% of target (AC-5)
+        min_threshold = 0.7
+        assert chunk_1_tokens >= min_threshold * target_chunk_size
+        assert chunk_2_tokens >= min_threshold * target_chunk_size
+
+    # Trace: SPEC-BALANCED-CHUNKS-001, AC-7
+    def test_balanced_single_chunk(self):
+        """AC-7: When total tokens < max_token_length, create single chunk"""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy", max_token_length=20000)
+
+        lines = ["line1\n", "line2\n", "line3\n"]
+
+        with patch.object(
+            translator.token_counter,
+            "count_tokens",
+            side_effect=lambda text: len(text.splitlines()) * 1000,  # 3000 total
+        ):
+            chunks = list(translator.chunk_generator(lines))
+
+        # Should create only 1 chunk since 3000 < 20000
+        assert len(chunks) == 1
+        assert chunks[0][0] == 1
+        assert chunks[0][1] == "line1\nline2\nline3\n"
+
+    # Trace: SPEC-BALANCED-CHUNKS-001, AC-6
+    def test_balanced_oversized_line(self, caplog):
+        """AC-6: Single line exceeding max_token_length is yielded standalone"""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy", max_token_length=1000)
+
+        lines = ["very long line\n", "normal line\n"]
+
+        def count_tokens_mock(text):
+            if "very long line" in text:
+                return 5000  # Exceeds max
+            return len(text.splitlines()) * 100
+
+        with (
+            patch.object(
+                translator.token_counter,
+                "count_tokens",
+                side_effect=count_tokens_mock,
+            ),
+            caplog.at_level("WARNING"),
+        ):
+            chunks = list(translator.chunk_generator(lines))
+
+        # Should create 2 chunks: oversized line alone, then normal line
+        expected_chunks = 2
+        assert len(chunks) == expected_chunks
+        assert chunks[0] == (1, "very long line\n")
+        assert chunks[1] == (2, "normal line\n")
+        assert any("single line over limit" in message for message in caplog.messages)
+
+    # Trace: SPEC-BALANCED-CHUNKS-001, AC-6 (edge case)
+    def test_balanced_oversized_line_after_buffer(self, caplog):
+        """AC-6 edge: Oversized line after buffered content yields with warning"""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy", max_token_length=10000)
+
+        # Scenario: buffer has 5000 tokens, then oversized line with 25000 tokens
+        lines = ["normal1\n", "normal2\n", "oversized line\n", "normal3\n"]
+
+        def count_tokens_mock(text):
+            if "oversized line" in text:
+                return 25000  # Exceeds max (10000)
+            return len(text.splitlines()) * 2500  # Each normal line: 2500 tokens
+
+        with (
+            patch.object(
+                translator.token_counter,
+                "count_tokens",
+                side_effect=count_tokens_mock,
+            ),
+            caplog.at_level("WARNING"),
+        ):
+            chunks = list(translator.chunk_generator(lines))
+
+        # Should create 3 chunks:
+        # 1. normal1+normal2 (5000 tokens)
+        # 2. oversized line alone (25000 tokens) with warning
+        # 3. normal3 (2500 tokens)
+        expected_chunks = 3
+        assert len(chunks) == expected_chunks
+
+        # Verify no chunk exceeds max_token_length (except the warned oversized one)
+        oversized_chunk_found = False
+        for _chunk_idx, chunk_text in chunks:
+            tokens = count_tokens_mock(chunk_text)
+            if tokens > translator.max_token_length:
+                # This should only happen for the oversized line chunk
+                assert "oversized line" in chunk_text
+                assert chunk_text.strip() == "oversized line"  # Should be standalone
+                oversized_chunk_found = True
+
+        assert oversized_chunk_found, "Oversized chunk should exist"
+        assert any(
+            "single line over limit" in message for message in caplog.messages
+        ), "Warning should be logged for oversized line"
+
+    # Trace: SPEC-BALANCED-CHUNKS-001, AC-3, AC-4
+    def test_balanced_three_chunks(self):
+        """Test balanced distribution with 3 chunks"""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy", max_token_length=20000)
+
+        # Simulate 45,000 tokens (should create 3 chunks of ~15,000 each)
+        lines = [f"line{i}\n" for i in range(45)]
+
+        with patch.object(
+            translator.token_counter,
+            "count_tokens",
+            side_effect=lambda text: len(text.splitlines()) * 1000,
+        ):
+            chunks = list(translator.chunk_generator(lines))
+
+        # Should create 3 chunks
+        expected_chunks = 3
+        assert len(chunks) == expected_chunks
+
+        # Each chunk should have roughly 15 lines (15,000 tokens)
+        target_lines_per_chunk = 15
+        max_line_variance = 3
+        for i, (_chunk_index, chunk_text) in enumerate(chunks):
+            chunk_lines = len(chunk_text.strip().split("\n"))
+            # Allow some variance but should be roughly balanced
+            assert abs(chunk_lines - target_lines_per_chunk) <= max_line_variance, (
+                f"Chunk {i + 1} has {chunk_lines} lines, "
+                f"expected ~{target_lines_per_chunk}"
+            )
