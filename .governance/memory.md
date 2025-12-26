@@ -2,6 +2,8 @@
 
 ## Recent Changes
 
+- 2025-12-26 (SPEC-RICH-UX-001 / TASK-20251226-RICH-UX-01): Unified rich console UX for progress and logging. Added shared console + RichHandler config in `src/utils/rich_logging.py`, updated `src/main.py` to use rich logging, and set translation progress to use the shared console with transient rendering. Added tests verifying RichHandler configuration and progress console usage (`tests/test_rich_logging.py`). Ran `uv run pytest tests/test_rich_logging.py`.
+
 - 2025-12-24 (TASK-20251224-COVERAGE): Improved test coverage from 99% to 99.7%. Removed dead code in `text_preprocessor.py` (unreachable ValueError handling in input loop, lines 85-86). Marked logically unreachable `return None` in `_translate_chunk` with pragma no cover. Marked sys.exit(1) with pragma no cover (integration test boundary). All 56 tests pass with 337 statements. Total coverage now 99% (only line 63 in main.py marked as unreachable integration point).
 
 - 2025-12-24 (SPEC-BALANCED-CHUNKS-001 / TASK-20251224-01): Implemented balanced chunk distribution algorithm to improve parallel translation efficiency. Previously, greedy chunking created unbalanced chunks (e.g., 19,592 vs 8,115 tokens), causing the largest chunk to bottleneck parallel processing. New 3-phase algorithm: (1) pre-scan total tokens, (2) calculate num_chunks and target_chunk_size, (3) distribute lines evenly at line boundaries. Result: ~20% reduction in parallel translation time by ensuring all worker threads complete at similar times. All 54 tests pass with 99% coverage. Updated `src/core/streaming_translator.py::chunk_generator` and added 4 new balanced distribution tests.

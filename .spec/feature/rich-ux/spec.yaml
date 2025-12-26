@@ -1,0 +1,18 @@
+spec_id: SPEC-RICH-UX-001
+title: "Rich console UX for progress and logs"
+given_when_then:
+  - given: "translation is running with a progress bar"
+    when: "logs are emitted during translation"
+    then: "log output renders with rich styling without breaking progress layout"
+  - given: "translation completes"
+    when: "progress is finished"
+    then: "progress display is transient and does not leave duplicate lines"
+acceptance_tests:
+  - id: TEST-RICH-UX-001
+    desc: "configure_logging uses RichHandler with a shared Console"
+  - id: TEST-RICH-UX-002
+    desc: "translation progress is created with the shared Console and transient mode"
+dependencies:
+  - governance: "rich-console-ux"
+linked_tasks:
+  - TASK-20251226-RICH-UX-01

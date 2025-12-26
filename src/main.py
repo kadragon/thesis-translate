@@ -1,4 +1,5 @@
 """Main entry point for academic paper translation."""
+# Trace: SPEC-RICH-UX-001, TASK-20251226-RICH-UX-01
 
 import logging
 import os
@@ -8,14 +9,13 @@ from dotenv import load_dotenv
 
 from src import config
 from src.core.streaming_translator import StreamingTranslator
+from src.utils.rich_logging import configure_logging
 from src.utils.text_preprocessor import TextPreprocessor
 
 load_dotenv()
 
 # Configure logging before anything else
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s: %(message)s"
-)
+configure_logging()
 logger = logging.getLogger(__name__)
 
 
