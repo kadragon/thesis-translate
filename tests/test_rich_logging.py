@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+from unittest.mock import patch
 
 from rich.logging import RichHandler
 
@@ -27,33 +28,6 @@ def test_translate_uses_shared_console_and_transient_progress(tmp_path, monkeypa
     input_file = tmp_path / "input.txt"
     input_file.write_text("line\n")
 
-    class DummyProgress:
-        """Capture Progress init args and behave like a minimal context manager."""
-
-        last_instance: DummyProgress | None = None
-
-        def __init__(self, *args, **kwargs):
-            self.args = args
-            self.kwargs = kwargs
-            DummyProgress.last_instance = self
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-        def add_task(self, *_args, **_kwargs):
-            return 1
-
-        def update(self, *_args, **_kwargs):
-            return None
-
-    monkeypatch.setattr(
-        "src.core.streaming_translator.Progress",
-        DummyProgress,
-    )
-
     monkeypatch.setattr(
         StreamingTranslator,
         "_translate_sequential",
@@ -70,8 +44,10 @@ def test_translate_uses_shared_console_and_transient_progress(tmp_path, monkeypa
     translator = StreamingTranslator(input_file=str(input_file), max_workers=1)
     monkeypatch.setattr(translator.token_counter, "count_tokens", lambda _text: 1)
 
-    translator.translate()
+    with patch("src.core.streaming_translator.Progress") as mock_progress:
+        translator.translate()
 
-    assert DummyProgress.last_instance is not None
-    assert DummyProgress.last_instance.kwargs["console"] is get_console()
-    assert DummyProgress.last_instance.kwargs["transient"] is True
+        assert mock_progress.call_count == 1
+        _args, kwargs = mock_progress.call_args
+        assert kwargs["console"] is get_console()
+        assert kwargs["transient"] is True
