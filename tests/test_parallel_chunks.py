@@ -37,9 +37,9 @@ class TestParallelTranslation:
         original_translate_chunk = translator._translate_chunk
         call_order = []
 
-        def mock_translate_chunk(chunk_index, chunk_text):
+        def mock_translate_chunk(chunk_index, chunk_text, progress=None, task_id=None):
             call_order.append(chunk_index)
-            return original_translate_chunk(chunk_index, chunk_text)
+            return original_translate_chunk(chunk_index, chunk_text, progress, task_id)
 
         with (
             patch.object(
@@ -66,7 +66,7 @@ class TestParallelTranslation:
         )
 
         # Mock translation with different completion times
-        def mock_translate(chunk_index, _chunk_text):
+        def mock_translate(chunk_index, _chunk_text, _progress=None, _task_id=None):
             return f"translated_chunk_{chunk_index}"
 
         with patch.object(translator, "_translate_chunk", side_effect=mock_translate):
@@ -94,7 +94,7 @@ class TestParallelTranslation:
         )
 
         # Mock translation: chunk 1 fails, chunk 2 succeeds
-        def mock_translate(chunk_index, _chunk_text):
+        def mock_translate(chunk_index, _chunk_text, _progress=None, _task_id=None):
             if chunk_index == 1:
                 return None  # Simulate failure
             return f"translated_chunk_{chunk_index}"

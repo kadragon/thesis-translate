@@ -19,6 +19,17 @@ else:  # pragma: no cover - alias for runtime type hints
     ChunkIterator = TypingIterator
 
 from openai import OpenAI
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TaskID,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
+    TimeRemainingColumn,
+)
 
 from src import config
 from src.core.translation_config import TranslationConfig
@@ -165,20 +176,64 @@ class StreamingTranslator:
             yield chunk_index, buffer
 
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC3
-    def _invoke_model(self, chunk_index: int, chunk_text: str) -> str:
+    def _invoke_model(
+        self,
+        chunk_index: int,
+        chunk_text: str,
+        progress: Progress | None = None,
+        task_id: TaskID | None = None,
+    ) -> str:
         """Call OpenAI for a single chunk and return translated content."""
+        # Constants for estimation and timeout
+        estimated_output_token_ratio = 1.3
+        korean_char_to_token_ratio = 2.5
+        api_timeout_seconds = 180.0
+
         prompt = self.config.PROMPT_TEMPLATE.format(
             glossary=self.config.glossary,
             text=chunk_text,
         )
+
+        # 예상 출력 토큰 수 추정 (입력 토큰 수 기반)
+        input_tokens = self.token_counter.count_tokens(chunk_text)
+        # 한글 번역은 보통 입력보다 1.2-1.5배 정도
+        estimated_output_tokens = int(input_tokens * estimated_output_token_ratio)
 
         try:
             response = self.client.chat.completions.create(
                 model=self.config.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=self.config.temperature,
+                timeout=api_timeout_seconds,  # 3분 타임아웃 (큰 청크 처리용)
+                stream=True,  # 스트리밍 활성화
             )
-            content = response.choices[0].message.content
+
+            # 스트리밍 응답 수집 with 진행률 표시
+            content_parts: list[str] = []
+            received_chars = 0
+
+            for stream_chunk in response:
+                if stream_chunk.choices[0].delta.content:
+                    chunk_content = stream_chunk.choices[0].delta.content
+                    content_parts.append(chunk_content)
+                    received_chars += len(chunk_content)
+
+                    # 진행률 업데이트 (프로그레스바 또는 로그)
+                    if progress and task_id is not None:
+                        # 한글 평균: 1글자 ≈ 2.5 토큰
+                        estimated_tokens = int(
+                            received_chars * korean_char_to_token_ratio
+                        )
+                        completed = min(estimated_tokens, estimated_output_tokens)
+                        progress.update(
+                            task_id, completed=completed, total=estimated_output_tokens
+                        )
+
+            content: str | None = "".join(content_parts) if content_parts else None
+
+            # 완료 처리
+            if content and progress and task_id is not None:
+                progress.update(task_id, completed=estimated_output_tokens)
         except Exception as exc:  # pragma: no cover - exercised via mocks
             logger.exception("OpenAI API 호출 중 오류 발생 (chunk=%d)", chunk_index)
             raise TransientTranslationError from exc
@@ -186,19 +241,27 @@ class StreamingTranslator:
         if not content:
             raise PermanentTranslationError
 
-        return str(content)
+        return content
 
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC3
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC4
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC5
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC6
-    def _translate_chunk(self, chunk_index: int, chunk_text: str) -> str | None:
+    def _translate_chunk(
+        self,
+        chunk_index: int,
+        chunk_text: str,
+        progress: Progress | None = None,
+        task_id: TaskID | None = None,
+    ) -> str | None:
         """Translate a chunk with retry/backoff logic."""
         max_attempts = self.max_retries + 1
 
         for attempt in range(1, max_attempts + 1):
             try:
-                translation = self._invoke_model(chunk_index, chunk_text)
+                translation = self._invoke_model(
+                    chunk_index, chunk_text, progress, task_id
+                )
             except TransientTranslationError as exc:
                 logger.warning(
                     "chunk=%d retry attempt=%d/%d: %s",
@@ -251,18 +314,28 @@ class StreamingTranslator:
         # Materialize chunks for progress tracking
         chunks = list(self.chunk_generator(lines))
         total_chunks = len(chunks)
-        logger.info(
-            "총 %d개의 번역 청크를 처리합니다 (max_workers=%d).",
-            total_chunks,
-            self.max_workers,
-        )
 
-        if self.max_workers == 1:
-            # Sequential mode (backward compatible)
-            result = self._translate_sequential(chunks, total_chunks)
-        else:
-            # Parallel mode
-            result = self._translate_parallel(chunks, total_chunks)
+        # Create progress bar with rich
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+            TimeRemainingColumn(),
+        ) as progress:
+            # Add overall progress task
+            overall_task = progress.add_task(
+                f"[cyan]Translating {total_chunks} chunks...", total=total_chunks
+            )
+
+            if self.max_workers == 1:
+                # Sequential mode (backward compatible)
+                result = self._translate_sequential(chunks, progress, overall_task)
+            else:
+                # Parallel mode
+                result = self._translate_parallel(chunks, progress, overall_task)
 
         duration = time.perf_counter() - start_time
         logger.info(
@@ -280,7 +353,10 @@ class StreamingTranslator:
         )
 
     def _translate_sequential(
-        self, chunks: list[tuple[int, str]], total_chunks: int
+        self,
+        chunks: list[tuple[int, str]],
+        progress: Progress,
+        overall_task: TaskID,
     ) -> TranslationRunResult:
         """Sequential translation (original behavior)."""
         translated_content: list[str] = []
@@ -288,13 +364,29 @@ class StreamingTranslator:
         failures = 0
 
         for chunk_index, chunk_text in chunks:
-            logger.info("processing chunk=%d/%d", chunk_index, total_chunks)
-            translation = self._translate_chunk(chunk_index, chunk_text)
+            # Add individual chunk task
+            chunk_task = progress.add_task(
+                f"[green]Chunk {chunk_index}", total=100, start=True
+            )
+
+            translation = self._translate_chunk(
+                chunk_index, chunk_text, progress, chunk_task
+            )
+
             if translation:
                 translated_content.append(translation)
                 successes += 1
+                progress.update(chunk_task, completed=100, visible=False)
             else:
                 failures += 1
+                progress.update(
+                    chunk_task,
+                    description=f"[red]Chunk {chunk_index} (failed)",
+                    visible=False,
+                )
+
+            # Update overall progress
+            progress.update(overall_task, advance=1)
 
         with Path(self.output_file).open("w", encoding="utf-8") as file:
             file.writelines(content + "\n\n" for content in translated_content)
@@ -306,7 +398,10 @@ class StreamingTranslator:
         )
 
     def _translate_parallel(
-        self, chunks: list[tuple[int, str]], total_chunks: int
+        self,
+        chunks: list[tuple[int, str]],
+        progress: Progress,
+        overall_task: TaskID,
     ) -> TranslationRunResult:
         """Parallel translation using ThreadPoolExecutor.
 
@@ -315,32 +410,56 @@ class StreamingTranslator:
         """
         # Dictionary to store futures and results by chunk_index
         future_to_chunk: dict[Future[str | None], int] = {}
+        chunk_to_task: dict[int, TaskID] = {}
         translated_results: dict[int, str] = {}
         successes = 0
         failures = 0
 
+        # Create task for each chunk
+        for chunk_index, _ in chunks:
+            chunk_task = progress.add_task(
+                f"[green]Chunk {chunk_index}", total=100, start=True
+            )
+            chunk_to_task[chunk_index] = chunk_task
+
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # Submit all chunks for parallel processing
             for chunk_index, chunk_text in chunks:
-                future = executor.submit(self._translate_chunk, chunk_index, chunk_text)
+                task_id = chunk_to_task[chunk_index]
+                future = executor.submit(
+                    self._translate_chunk, chunk_index, chunk_text, progress, task_id
+                )
                 future_to_chunk[future] = chunk_index
-            logger.info("submitted %d chunks for translation", total_chunks)
 
             # Collect results as they complete
             for future in as_completed(future_to_chunk):
                 chunk_index = future_to_chunk[future]
+                chunk_task = chunk_to_task[chunk_index]
+
                 try:
                     translation = future.result()
                     if translation:
                         translated_results[chunk_index] = translation
                         successes += 1
-                        logger.info("chunk=%d completed successfully", chunk_index)
+                        progress.update(chunk_task, completed=100, visible=False)
                     else:
                         failures += 1
-                        logger.warning("chunk=%d failed", chunk_index)
+                        progress.update(
+                            chunk_task,
+                            description=f"[red]Chunk {chunk_index} (failed)",
+                            visible=False,
+                        )
                 except Exception:
                     logger.exception("chunk=%d raised exception", chunk_index)
                     failures += 1
+                    progress.update(
+                        chunk_task,
+                        description=f"[red]Chunk {chunk_index} (error)",
+                        visible=False,
+                    )
+
+                # Update overall progress
+                progress.update(overall_task, advance=1)
 
         # Write results in original chunk order
         translated_content = [

@@ -21,6 +21,14 @@ def _build_config(prompt: str = "Translate: {text}") -> Mock:
     return config
 
 
+def _create_streaming_response(content: str | None) -> list:
+    """Create a mock streaming response for OpenAI API."""
+    if content is None:
+        return []
+    # Split content into chunks to simulate streaming
+    return [Mock(choices=[Mock(delta=Mock(content=content))])]
+
+
 class TestTranslator:
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC2
     # Updated for SPEC-BALANCED-CHUNKS-001: balanced distribution changes
@@ -68,7 +76,7 @@ class TestTranslator:
         result = translator._translate_chunk(1, "Hello world")
 
         assert result == "번역된 텍스트"
-        mock_invoke.assert_called_once_with(1, "Hello world")
+        mock_invoke.assert_called_once_with(1, "Hello world", None, None)
 
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC4
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC5
@@ -92,7 +100,9 @@ class TestTranslator:
         ]
         expected_calls = len(responses)
 
-        def fake_invoke(_chunk_index: int, _chunk_text: str):
+        def fake_invoke(
+            _chunk_index: int, _chunk_text: str, _progress=None, _task_id=None
+        ):
             result = responses.pop(0)
             if isinstance(result, Exception):
                 raise result
@@ -146,8 +156,8 @@ class TestTranslator:
         config = _build_config()
         mock_client = Mock()
         mock_openai_class.return_value = mock_client
-        mock_client.chat.completions.create.return_value = Mock(
-            choices=[Mock(message=Mock(content="번역 결과"))]
+        mock_client.chat.completions.create.return_value = _create_streaming_response(
+            "번역 결과"
         )
 
         with patch(
@@ -239,7 +249,9 @@ class TestTranslator:
             PermanentTranslationError("fatal"),
         ]
 
-        def fake_invoke(_chunk_index: int, _chunk_text: str):
+        def fake_invoke(
+            _chunk_index: int, _chunk_text: str, _progress=None, _task_id=None
+        ):
             result = invoke_results.pop(0)
             if isinstance(result, Exception):
                 raise result
@@ -295,8 +307,8 @@ class TestTranslator:
         """Test that empty API response raises PermanentTranslationError"""
         config = _build_config()
         mock_client = Mock()
-        mock_client.chat.completions.create.return_value = Mock(
-            choices=[Mock(message=Mock(content=None))]
+        mock_client.chat.completions.create.return_value = _create_streaming_response(
+            None
         )
 
         with (
@@ -328,7 +340,9 @@ class TestTranslator:
             "success",
         ]
 
-        def fake_invoke(_chunk_index: int, _chunk_text: str):
+        def fake_invoke(
+            _chunk_index: int, _chunk_text: str, _progress=None, _task_id=None
+        ):
             result = responses.pop(0)
             if isinstance(result, Exception):
                 raise result
@@ -364,7 +378,9 @@ class TestTranslator:
                 max_workers=2,
             )
 
-        def fake_translate(chunk_index: int, _chunk_text: str):
+        def fake_translate(
+            chunk_index: int, _chunk_text: str, _progress=None, _task_id=None
+        ):
             if chunk_index == 1:
                 error_message = "Unexpected error"
                 raise RuntimeError(error_message)
@@ -408,7 +424,9 @@ class TestTranslator:
 
         failed_chunk_index = 2
 
-        def fake_translate(chunk_index: int, _chunk_text: str):
+        def fake_translate(
+            chunk_index: int, _chunk_text: str, _progress=None, _task_id=None
+        ):
             # Fail on chunk 2, succeed on chunk 1
             if chunk_index == failed_chunk_index:
                 return None
