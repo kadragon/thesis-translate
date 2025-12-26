@@ -3,6 +3,24 @@
 # IMPORTANT: Each task must be properly indented under completed_tasks list
 
 completed_tasks:
+  - task_id: TASK-20251226-RICH-UX-01
+    spec_id: SPEC-RICH-UX-001
+    title: "Unify rich progress and logging output"
+    completed_at: "2025-12-26T16:05:00Z"
+    outcome: |
+      Unified console rendering for progress and logs:
+      - Added shared rich console and logging configuration via RichHandler
+      - Updated main entrypoint to configure rich logging
+      - Ensured translation progress uses shared console and transient rendering
+      - Added tests to verify rich handler setup and progress console usage
+    test_results: |
+      ✓ uv run pytest tests/test_rich_logging.py
+    estimated_effort: 1.0h
+    actual_effort: 0.8h
+    notes: |
+      Acceptance criteria satisfied:
+      - ✓ Logs render with RichHandler using shared Console (TEST-RICH-UX-001)
+      - ✓ Progress uses shared Console and transient mode (TEST-RICH-UX-002)
   - task_id: TASK-20251224-01
     spec_id: SPEC-BALANCED-CHUNKS-001
     title: "Implement balanced chunk distribution for improved parallel translation"

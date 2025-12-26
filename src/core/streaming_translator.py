@@ -1,4 +1,5 @@
 """Translation module for academic papers using OpenAI Chat Completions API."""
+# Trace: SPEC-RICH-UX-001, TASK-20251226-RICH-UX-01
 # GENERATED FROM SPEC-TRANSLATION-001
 # MODIFIED FOR SPEC-PARALLEL-CHUNKS-001
 
@@ -34,6 +35,7 @@ from rich.progress import (
 from src import config
 from src.core.translation_config import TranslationConfig
 from src.utils.output_formatter import OutputFormatter
+from src.utils.rich_logging import get_console
 from src.utils.token_counter import TokenCounter
 
 logger = logging.getLogger(__name__)
@@ -324,6 +326,8 @@ class StreamingTranslator:
             MofNCompleteColumn(),
             TimeElapsedColumn(),
             TimeRemainingColumn(),
+            console=get_console(),
+            transient=True,
         ) as progress:
             # Add overall progress task
             overall_task = progress.add_task(
