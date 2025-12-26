@@ -184,6 +184,11 @@ class StreamingTranslator:
         task_id: TaskID | None = None,
     ) -> str:
         """Call OpenAI for a single chunk and return translated content."""
+        # Constants for estimation and timeout
+        estimated_output_token_ratio = 1.3
+        korean_char_to_token_ratio = 2.5
+        api_timeout_seconds = 180.0
+
         prompt = self.config.PROMPT_TEMPLATE.format(
             glossary=self.config.glossary,
             text=chunk_text,
@@ -192,14 +197,14 @@ class StreamingTranslator:
         # 예상 출력 토큰 수 추정 (입력 토큰 수 기반)
         input_tokens = self.token_counter.count_tokens(chunk_text)
         # 한글 번역은 보통 입력보다 1.2-1.5배 정도
-        estimated_output_tokens = int(input_tokens * 1.3)
+        estimated_output_tokens = int(input_tokens * estimated_output_token_ratio)
 
         try:
             response = self.client.chat.completions.create(
                 model=self.config.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=self.config.temperature,
-                timeout=180.0,  # 3분 타임아웃 (큰 청크 처리용)
+                timeout=api_timeout_seconds,  # 3분 타임아웃 (큰 청크 처리용)
                 stream=True,  # 스트리밍 활성화
             )
 
@@ -216,7 +221,9 @@ class StreamingTranslator:
                     # 진행률 업데이트 (프로그레스바 또는 로그)
                     if progress and task_id is not None:
                         # 한글 평균: 1글자 ≈ 2.5 토큰
-                        estimated_tokens = int(received_chars * 2.5)
+                        estimated_tokens = int(
+                            received_chars * korean_char_to_token_ratio
+                        )
                         completed = min(estimated_tokens, estimated_output_tokens)
                         progress.update(
                             task_id, completed=completed, total=estimated_output_tokens
@@ -325,14 +332,10 @@ class StreamingTranslator:
 
             if self.max_workers == 1:
                 # Sequential mode (backward compatible)
-                result = self._translate_sequential(
-                    chunks, total_chunks, progress, overall_task
-                )
+                result = self._translate_sequential(chunks, progress, overall_task)
             else:
                 # Parallel mode
-                result = self._translate_parallel(
-                    chunks, total_chunks, progress, overall_task
-                )
+                result = self._translate_parallel(chunks, progress, overall_task)
 
         duration = time.perf_counter() - start_time
         logger.info(
@@ -352,7 +355,6 @@ class StreamingTranslator:
     def _translate_sequential(
         self,
         chunks: list[tuple[int, str]],
-        total_chunks: int,  # noqa: ARG002
         progress: Progress,
         overall_task: TaskID,
     ) -> TranslationRunResult:
@@ -398,7 +400,6 @@ class StreamingTranslator:
     def _translate_parallel(
         self,
         chunks: list[tuple[int, str]],
-        total_chunks: int,  # noqa: ARG002
         progress: Progress,
         overall_task: TaskID,
     ) -> TranslationRunResult:
