@@ -1,0 +1,47 @@
+spec_id: SPEC-REFACTOR-COVERAGE-001
+title: "Close remaining test coverage gap (main.py line 75)"
+status: draft
+
+given_when_then:
+  - given: "main.py line 75 (sys.exit(1) in except block) is uncovered, coverage is 99%"
+    when: "developer either adds integration test OR marks line unreachable with pragma"
+    then: "coverage reaches 100%, all code is either tested or justified as unreachable"
+
+  - given: "sys.exit(1) is at boundary between normal flow and fatal error"
+    when: "developer adds integration test that triggers exception path"
+    then: "exception handling in main() is exercised and verified"
+
+acceptance_tests:
+  - id: TEST-REFACTOR-COVERAGE-001-AC1
+    desc: "Coverage report shows 100% line coverage"
+    expected: "pytest --cov=src shows 100% coverage, no missing lines"
+
+  - id: TEST-REFACTOR-COVERAGE-001-AC2
+    desc: "Either integration test triggers exception OR pragma comment added to line 75"
+    expected: "Line 75 either covered by test or has '# pragma: no cover' with justification"
+
+  - id: TEST-REFACTOR-COVERAGE-001-AC3
+    desc: "If integration test added, it verifies exception handling flow"
+    expected: "Test demonstrates that StreamingTranslator raises exception and main() catches it"
+
+  - id: TEST-REFACTOR-COVERAGE-001-AC4
+    desc: "If pragma comment added, comment explains why integration test not needed"
+    expected: "Comment clearly states this is unreachable or not worth testing"
+
+  - id: TEST-REFACTOR-COVERAGE-001-AC5
+    desc: "All existing tests still pass"
+    expected: "pytest runs 70 tests (existing 69 + optional new integration test), all green"
+
+dependencies:
+  - governance: "memory.md (coverage notes from 2025-12-24)"
+  - related_task: "previous coverage improvement work"
+
+linked_tasks:
+  - TASK-20251228-REFACTOR-COVERAGE-001
+
+notes:
+  - "Currently at 99% coverage (1 line missing: main.py line 75)"
+  - "Line is sys.exit(1) in exception handler during translation"
+  - "Integration test would need to mock streaming translator to fail consistently"
+  - "Alternative: mark as unreachable and document why (boundary condition)"
+  - "Decision needed: test-driven or mark as unreachable pragma?"

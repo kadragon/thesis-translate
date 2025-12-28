@@ -71,5 +71,8 @@ def main() -> None:
         sys.exit(1)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
+    # Entry point guard - tested through direct main() calls in test suite
+    # Integration testing of this guard would require subprocess execution
+    # which adds complexity without meaningful coverage benefit
     main()

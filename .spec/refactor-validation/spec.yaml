@@ -1,0 +1,54 @@
+spec_id: SPEC-REFACTOR-VALIDATION-001
+title: "Add input validation for Progress parameters"
+status: draft
+
+given_when_then:
+  - given: "_translate_chunk() accepts progress: Progress | None but assumes non-None (line 224)"
+    when: "developer adds defensive validation at method entry"
+    then: "None case is explicitly handled with NoOp progress handler"
+
+  - given: "_invoke_model() uses progress and task_id without null checks (lines 224, 237)"
+    when: "developer adds None checks before calling progress.update()"
+    then: "method is safe to call with progress=None"
+
+  - given: "Progress tracking is optional for certain code paths"
+    when: "developer creates NoOp progress class or sentinel object"
+    then: "None can be safely replaced with no-op, simplifying call sites"
+
+acceptance_tests:
+  - id: TEST-REFACTOR-VALIDATION-001-AC1
+    desc: "_translate_chunk() accepts progress=None without exception"
+    expected: "Method runs to completion, returns translation string"
+
+  - id: TEST-REFACTOR-VALIDATION-001-AC2
+    desc: "_invoke_model() handles progress=None, does not call update"
+    expected: "No AttributeError on None.update() or similar"
+
+  - id: TEST-REFACTOR-VALIDATION-001-AC3
+    desc: "NoOp progress handler silently ignores all calls"
+    expected: "NoOp().update() returns None, does not raise"
+
+  - id: TEST-REFACTOR-VALIDATION-001-AC4
+    desc: "Docstrings document expected state for progress parameters"
+    expected: "Both methods have clear docstring on when progress can be None"
+
+  - id: TEST-REFACTOR-VALIDATION-001-AC5
+    desc: "Valid Progress object still works as before"
+    expected: "progress.update() calls still update UI correctly"
+
+  - id: TEST-REFACTOR-VALIDATION-001-AC6
+    desc: "Test coverage maintained at 100%"
+    expected: "Tests cover both None and valid Progress cases"
+
+dependencies:
+  - governance: "coding-style.md (defensive programming patterns)"
+  - related_spec: "SPEC-TRANSLATION-001"
+
+linked_tasks:
+  - TASK-20251228-REFACTOR-VALIDATION-001
+
+notes:
+  - "Currently progress is optional in signature but used without checks"
+  - "Defensive programming prevents future bugs from misuse"
+  - "NoOp handler pattern is standard for optional dependencies"
+  - "Improves API clarity and safety"
