@@ -64,17 +64,14 @@ class TestTextPreprocessor:
         mock_file().write.assert_called_with("  Hello world\n\n")
 
     # Trace: SPEC-TEXT-PREP-001, TEST-TEXT-PREP-001-AC1
-    @patch("builtins.input")
+    @patch("src.utils.text_preprocessor.ask_menu_action")
+    @patch("src.utils.text_preprocessor.ask_start_page")
     @patch("src.utils.text_preprocessor.clipboard.paste")
-    def test_run_add_text_flow(self, mock_paste, mock_input):
+    def test_run_add_text_flow(self, mock_paste, mock_start_page, mock_menu_action):
         """Test the main run loop for adding text"""
         # Given
-        mock_input.side_effect = [
-            "123",
-            "A",
-            "world",
-            "B",
-        ]  # page, command A, text input, quit
+        mock_start_page.return_value = TEST_PAGE_NUMBER
+        mock_menu_action.side_effect = ["A", "B"]  # Add text, then quit
         mock_paste.return_value = "Hello"
         preprocessor = TextPreprocessor()
 
@@ -86,18 +83,17 @@ class TestTextPreprocessor:
         assert "Hello\n" in preprocessor.text
 
     # Trace: SPEC-TEXT-PREP-001, TEST-TEXT-PREP-001-AC4
-    @patch("builtins.input")
+    @patch("src.utils.text_preprocessor.ask_menu_action")
+    @patch("src.utils.text_preprocessor.ask_start_page")
     @patch("src.utils.text_preprocessor.clipboard.paste")
     @patch("pathlib.Path.open", new_callable=mock_open)
-    def test_run_translate_flow(self, mock_file, mock_paste, mock_input):
+    def test_run_translate_flow(
+        self, mock_file, mock_paste, mock_start_page, mock_menu_action
+    ):
         """Test the main run loop for translating text"""
         # Given
-        mock_input.side_effect = [
-            "123",
-            "",
-            "world",
-            "B",
-        ]  # page, empty command (translate), text input, quit
+        mock_start_page.return_value = TEST_PAGE_NUMBER
+        mock_menu_action.side_effect = ["", "B"]  # Empty (translate), then quit
         mock_paste.return_value = "Hello"
         preprocessor = TextPreprocessor()
 
@@ -111,17 +107,17 @@ class TestTextPreprocessor:
         mock_file().write.assert_called_with("  Hello\n\n")
 
     # Trace: SPEC-TEXT-PREP-001, TEST-TEXT-PREP-001-AC5
-    @patch("builtins.input")
+    @patch("src.utils.text_preprocessor.ask_menu_action")
+    @patch("src.utils.text_preprocessor.ask_start_page")
     @patch("src.utils.text_preprocessor.clipboard.paste")
     @patch("pathlib.Path.open", new_callable=mock_open)
-    def test_run_translate_clean_flow(self, mock_file, mock_paste, mock_input):
+    def test_run_translate_clean_flow(
+        self, mock_file, mock_paste, mock_start_page, mock_menu_action
+    ):
         """AC-5: GIVEN command C WHEN invoked THEN cleaned text writes once"""
         # Given
-        mock_input.side_effect = [
-            "123",
-            "C",
-            "B",
-        ]
+        mock_start_page.return_value = TEST_PAGE_NUMBER
+        mock_menu_action.side_effect = ["C", "B"]  # Clean, then quit
         mock_paste.return_value = "Hello\nworld"
         preprocessor = TextPreprocessor()
 
@@ -176,20 +172,19 @@ class TestTextPreprocessor:
         warning_message = mock_logger.warning.call_args[0][0]
         assert "텍스트 정리" in warning_message
 
-    @patch("builtins.input")
+    @patch("src.utils.text_preprocessor.ask_menu_action")
+    @patch("src.utils.text_preprocessor.ask_start_page")
     @patch("pathlib.Path.open", new_callable=mock_open)
-    def test_run_page_number_addition(self, mock_file, mock_input):
+    def test_run_page_number_addition(
+        self, mock_file, mock_start_page, mock_menu_action
+    ):
         """Test that 'E' command adds page number and increments counter"""
         # Given
         initial_page = 100
         expected_final_page = 102  # Started at 100, incremented twice
 
-        mock_input.side_effect = [
-            str(initial_page),  # Initial page number
-            "E",  # Add page number command
-            "E",  # Add page number command again
-            "B",  # Quit
-        ]
+        mock_start_page.return_value = initial_page
+        mock_menu_action.side_effect = ["E", "E", "B"]  # Add page twice, then quit
         preprocessor = TextPreprocessor()
 
         # When
@@ -200,18 +195,16 @@ class TestTextPreprocessor:
         write_calls = [call.args[0] for call in mock_file().write.call_args_list]
         assert write_calls == ["  p.100\n\n", "  p.101\n\n"]
 
-    @patch("builtins.input")
-    def test_run_invalid_page_number_retry(self, mock_input):
-        """Test that invalid page number input triggers retry"""
+    @patch("src.utils.text_preprocessor.ask_menu_action")
+    @patch("src.utils.text_preprocessor.ask_start_page")
+    def test_run_invalid_page_number_retry(self, mock_start_page, mock_menu_action):
+        """Test that page number is set from ask_start_page"""
         # Given
         valid_page_number = 42
 
-        mock_input.side_effect = [
-            "not a number",  # Invalid input
-            "abc",  # Another invalid input
-            str(valid_page_number),  # Valid input
-            "B",  # Quit
-        ]
+        # ask_start_page handles validation internally via rich.prompt.IntPrompt
+        mock_start_page.return_value = valid_page_number
+        mock_menu_action.side_effect = ["B"]  # Quit immediately
         preprocessor = TextPreprocessor()
 
         # When
@@ -219,3 +212,4 @@ class TestTextPreprocessor:
 
         # Then
         assert preprocessor.page_number == valid_page_number
+        mock_start_page.assert_called_once()
