@@ -1,45 +1,73 @@
 # Project Memory
 
-## Recent Changes
+## Recent Changes (Compacted)
 
-- 2025-12-28 (SPEC-REFACTOR-DEDUP-001 / TASK-20251228-REFACTOR-DEDUP-001): Deduplicated code between `_translate_sequential()` and `_translate_parallel()` by extracting common logic into shared helper methods. Created `_write_translations(results, chunks, output_file)` method (lines 368-393) to unify file writing logic - writes chunks in original order with double newline separator, handles missing chunks correctly, enforces UTF-8 encoding. Created `_update_task_progress(success, chunk_index, progress, task_id)` method (lines 397-423) to unify progress update logic - marks success as 100% complete and hidden, marks failure with red message and hidden. Refactored both `_translate_sequential()` (lines 489-534) and `_translate_parallel()` (lines 536-610) to use helper methods instead of duplicated inline code. Changed `translated_content: list[str]` to `translated_results: dict[int, str]` in both methods for better chunk index tracking. Reduced code duplication from ~70% overlap to <30%. Added 6 comprehensive tests for helper methods covering UTF-8 encoding, formatting, missing chunks, success/failure progress updates, and byte-for-byte identical output between modes. All 80 tests pass with 100% coverage (422 statements). **Lesson**: When two code paths have similar logic but different execution models (sequential vs parallel), extract the common operations into focused helper methods. This creates single source of truth for shared behavior, making changes easier (only one place to update), ensuring consistency between paths, and improving testability (helpers tested independently). Used dict instead of list for results to maintain chunk order while allowing gaps from failed translations. Helper methods should be private implementation details. Pure refactoring with no behavior changes requires careful verification that both paths produce identical output.
+- 2025-12-28 (SPEC-REFACTOR-DEDUP-001): Created `_write_translations()` and `_update_task_progress()` helpers to deduplicate sequential/parallel paths. Reduced overlap from 70% to <30%. 80 tests, 100% coverage.
 
-- 2025-12-28 (SPEC-REFACTOR-VALIDATION-001 / TASK-20251228-REFACTOR-VALIDATION-001): Added defensive input validation for optional Progress parameters using NoOp handler pattern. Created `NoOpProgress` class (lines 44-66) providing no-operation methods (`update()`, `add_task()`) that silently ignore all calls. Updated `_invoke_model()` to replace `None` progress with `NoOpProgress()` instance at method entry (lines 241-244), eliminating need for conditional checks in streaming response loop. Removed `if progress and task_id is not None:` conditionals from progress update calls (lines 275-283, 288-289), simplifying code flow. Added comprehensive docstrings documenting progress parameter expectations and None handling behavior. Added 5 new tests covering NoOpProgress behavior and progress=None handling scenarios. All 74 tests pass with 100% coverage (419 statements). **Lesson**: NoOp handler pattern for optional dependencies eliminates defensive None checks throughout code, reducing complexity while improving safety. Centralizing None-to-NoOp replacement at method entry point is cleaner than checking at each usage site. This defensive programming pattern prevents future AttributeError bugs when optional parameters are None. Pattern is standard in production code for optional progress tracking, logging, and monitoring dependencies.
+- 2025-12-28 (SPEC-REFACTOR-VALIDATION-001): Added `NoOpProgress` class for null-safe progress handling. Removed conditional checks in streaming logic. 74 tests, 100% coverage.
 
-- 2025-12-28 (SPEC-REFACTOR-EXCEPTIONS-001 / TASK-20251228-REFACTOR-EXCEPTIONS-001): Consolidated `TransientTranslationError` and `PermanentTranslationError` into single `TranslationError` class with `is_transient: bool` attribute. Simplified exception handling from two separate exception classes (lines 53-65) to one unified class with boolean flag to indicate retry behavior. Updated `_invoke_model()` to raise `TranslationError(is_transient=True/False)` instead of separate classes. Refactored `_translate_chunk()` to use single `except TranslationError as exc:` block checking `exc.is_transient` instead of two separate except blocks. Default messages preserved based on `is_transient` flag. All 69 tests pass with 100% coverage. Pure refactoring with no behavior changes. **Lesson**: When two exception classes differ only by default message and retry behavior, consolidating into single class with boolean attribute simplifies code while preserving intent through explicit flag. Exception handling becomes more readable with conditional logic instead of multiple catch blocks.
+- 2025-12-28 (SPEC-REFACTOR-EXCEPTIONS-001): Merged `TransientTranslationError` and `PermanentTranslationError` into single `TranslationError(is_transient: bool)`. 69 tests, 100% coverage.
 
-- 2025-12-28 (SPEC-REFACTOR-COVERAGE-001 / TASK-20251228-REFACTOR-COVERAGE-001): Achieved 100% test coverage by adding pragma comment to `if __name__ == "__main__"` guard in `src/main.py` (lines 74-78). Added `# pragma: no cover` with explanatory comment documenting that this is a standard Python entry point pattern, functionality is tested through 9 direct `main()` calls, and integration testing would require subprocess execution without meaningful coverage benefit. Coverage improved from 99% (1 missing line) to 100% (412 statements, 0 missed). All 70 tests pass (69 passed, 1 skipped). **Lesson**: For standard patterns like module entry point guards, pragma comments with clear justification are preferred over complex integration tests when functionality is already covered through unit tests.
+- 2025-12-28 (SPEC-REFACTOR-COVERAGE-001): Added pragma to `if __name__ == "__main__"` guard. Achieved 100% coverage.
 
-- 2025-12-28 (SPEC-REFACTOR-CONSTANTS-001 / TASK-20251228-REFACTOR-CONSTANTS-001): Extracted magic numbers to named class constants for improved maintainability. Added 4 class constants: `StreamingTranslator.API_TIMEOUT_SECONDS = 180.0`, `StreamingTranslator.ESTIMATED_OUTPUT_TOKEN_RATIO = 1.3`, `StreamingTranslator.KOREAN_CHAR_TO_TOKEN_RATIO = 2.5`, and `TextPreprocessor.CONFIG_INDENT = "  "`. All constants placed at class header level for discoverability. Replaced hardcoded values in `_invoke_model()` method (lines 203, 210, 228) and `add_text_to_file()` method (line 39). All 69 tests pass with 100% coverage. Pure refactoring with no behavior changes. Constants now centralized for easy tuning of API timeout, token estimation ratios, and formatting parameters.
+- 2025-12-28 (SPEC-REFACTOR-CONSTANTS-001): Extracted magic numbers to class constants: `API_TIMEOUT_SECONDS`, `ESTIMATED_OUTPUT_TOKEN_RATIO`, `KOREAN_CHAR_TO_TOKEN_RATIO`, `CONFIG_INDENT`.
 
-- 2025-12-26 (SPEC-RICH-UX-001 / TASK-20251226-RICH-UX-01): Unified rich console UX for progress and logging. Added shared console + RichHandler config in `src/utils/rich_logging.py`, updated `src/main.py` to use rich logging, and set translation progress to use the shared console with transient rendering. Added tests verifying RichHandler configuration and progress console usage (`tests/test_rich_logging.py`). Ran `uv run pytest tests/test_rich_logging.py`.
+- 2025-12-26 (SPEC-RICH-UX-001): Unified rich console UX for progress and logging via shared RichHandler.
 
-- 2025-12-24 (TASK-20251224-COVERAGE): Improved test coverage from 99% to 99.7%. Removed dead code in `text_preprocessor.py` (unreachable ValueError handling in input loop, lines 85-86). Marked logically unreachable `return None` in `_translate_chunk` with pragma no cover. Marked sys.exit(1) with pragma no cover (integration test boundary). All 56 tests pass with 337 statements. Total coverage now 99% (only line 63 in main.py marked as unreachable integration point).
+- 2025-12-24 (SPEC-BALANCED-CHUNKS-001): Implemented 3-phase balanced chunk distribution. ~20% reduction in parallel translation time.
 
-- 2025-12-24 (SPEC-BALANCED-CHUNKS-001 / TASK-20251224-01): Implemented balanced chunk distribution algorithm to improve parallel translation efficiency. Previously, greedy chunking created unbalanced chunks (e.g., 19,592 vs 8,115 tokens), causing the largest chunk to bottleneck parallel processing. New 3-phase algorithm: (1) pre-scan total tokens, (2) calculate num_chunks and target_chunk_size, (3) distribute lines evenly at line boundaries. Result: ~20% reduction in parallel translation time by ensuring all worker threads complete at similar times. All 54 tests pass with 99% coverage. Updated `src/core/streaming_translator.py::chunk_generator` and added 4 new balanced distribution tests.
+- 2025-12-07 (SPEC-PARALLEL-CHUNKS-001): Added ThreadPoolExecutor with `TRANSLATION_MAX_WORKERS` (default 3). Removed file monitoring features.
 
-- 2025-12-07 (SPEC-PARALLEL-CHUNKS-001 / TASK-20251207-02): Added a safe default `OPENAI_API_KEY` in `tests/conftest.py` using `setdefault` so OpenAI client instantiation during tests no longer fails when the env lacks a key. This does not override real secrets. All tests now pass via `uv run pytest`.
+- 2025-12-02: Migrated task tracking to YAML format (backlog.yaml, current.yaml, done.yaml).
 
-- 2025-12-07 (SPEC-PARALLEL-CHUNKS-001 / TASK-20251207-01): Implemented parallel chunk translation using ThreadPoolExecutor. Chunks are now processed concurrently (max_workers=3 by default) to reduce total translation time. Added `TRANSLATION_MAX_WORKERS` config (clamped 1-10). Removed file monitoring and user-prompted translation features (concurrent-translation, user-prompted-translation specs and implementations deleted). Sequential mode (max_workers=1) maintained for backward compatibility. All tests pass.
-
-- 2025-12-02: Migrated task tracking from Markdown to YAML format per CLAUDE.md standards. Created `backlog.yaml`, `current.yaml`, and `done.yaml` with proper indentation structure to prevent parsing errors. Migrated 5 completed tasks from legacy `.md` files. This ensures compliance with SDD×TDD governance requirements and prevents YAML indentation errors identified in code review.
-
-- 2025-11-17 (SPEC-CONFIG-001 / TASK-20251117-01): Config now reads all parameters from environment only; missing keys raise ValueError. Added pytest env defaults via `tests/conftest.py` and refreshed translation_config defaults to pick up runtime env. `.env.example` lists required vars.
+- 2025-11-17 (SPEC-CONFIG-001): Config reads from environment only; missing keys raise ValueError.
 
 ## Task Management
 
 ### Format Standards
-- **backlog.yaml**: Pending tasks in priority order under `pending_tasks:` list
-- **current.yaml**: Single active task under `current_task:` (null when none active)
+
+- **backlog.yaml**: Pending tasks under `pending_tasks:` list
+- **current.yaml**: Single active task under `current_task:` (null when none)
 - **done.yaml**: Completed tasks under `completed_tasks:` list with 2-space indentation
 
-### Critical YAML Rules
-1. List items must use 2-space indentation under parent key
-2. Properties use 4-space indentation
-3. Never place list items (`- task_id:`) at root level
-4. Multi-line strings use `|` indicator with proper indentation
+### YAML Rules
 
-### Migration Notes
-- Legacy `.md` files preserved until confirmed unnecessary
-- All 5 historical tasks successfully migrated to `done.yaml`
-- YAML validation passes for all three files
+1. List items use 2-space indentation under parent key
+2. Properties use 4-space indentation
+3. Multi-line strings use `|` indicator
+
+## Key Patterns Learned
+
+- **NoOp handler pattern**: Use for optional dependencies to eliminate null checks
+- **Helper extraction**: Extract common ops from similar code paths into focused helpers
+- **Boolean flags over class hierarchy**: Prefer `is_transient` flag over separate exception types
+- **Pragma for entry points**: Standard practice for `if __name__ == "__main__"` guards
+
+---
+
+## Compaction Summary
+
+- **Date**: 2025-12-28
+- **Keep count (N)**: 10
+- **Trace**: SDD-CONTEXT-COMPACTOR-001
+
+### Removed Items
+
+- **backlog.yaml**: 3 duplicate tasks removed (already in done.yaml)
+- **done.yaml**: 6 old tasks removed (kept 10 most recent), verbose entries condensed
+- **.spec/**: 7 unreferenced specs deleted:
+  - refactoring/refactoring-plan.md
+  - feature/cli-status/spec.md
+  - feature/text-preprocessing/spec.md
+  - feature/token-counter/spec.md
+  - feature/translation/spec.md
+  - refactor/dry-chunking/spec.md
+  - refactor/remove-unreachable/spec.md
+- **memory.md**: Verbose paragraphs condensed to bullet points
+
+### Final Counts
+
+- backlog.yaml: 0 pending tasks
+- done.yaml: 10 completed tasks (was 16)
+- .spec/: 9 specs (was 16)
+- memory.md: ~60 lines (was 46 lines with verbose text)
