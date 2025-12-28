@@ -1,12 +1,13 @@
 """Rich-based interactive prompts for better UX."""
 
-from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.text import Text
 
-# Use shared console for consistency with logging
-console = Console()
+from src.utils.rich_logging import get_console
+
+# Use shared console for consistency with logging and progress bars
+console = get_console()
 
 
 def confirm_clear_file(file_path: str) -> bool:
