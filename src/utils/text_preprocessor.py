@@ -16,6 +16,8 @@ class TextPreprocessor:
     """Manages text input from clipboard and saves to file for translation."""
 
     FILE_NAME: str = config.INPUT_FILE
+    # Trace: SPEC-REFACTOR-CONSTANTS-001, TASK-20251228-REFACTOR-CONSTANTS-001
+    CONFIG_INDENT: str = "  "  # 2 spaces for config file indentation
 
     # Trace: SPEC-TEXT-PREP-001, TEST-TEXT-PREP-001-AC1
     # Trace: SPEC-TEXT-PREP-001, TEST-TEXT-PREP-001-AC2
@@ -34,7 +36,7 @@ class TextPreprocessor:
             file_name: Path to the file (default: configured input file).
         """
         with Path(file_name).open("a", encoding="UTF-8") as f:
-            f.write("  " + text + "\n\n")
+            f.write(self.CONFIG_INDENT + text + "\n\n")
 
     # Trace: SPEC-TEXT-PREP-001, TEST-TEXT-PREP-001-AC2
     # Trace: SPEC-TEXT-PREP-001, TEST-TEXT-PREP-001-AC6

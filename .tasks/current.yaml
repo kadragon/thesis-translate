@@ -5,11 +5,5 @@
 
 current_task: null
 
-# Example format when a task is active:
-# current_task:
-#   task_id: TASK-XXX
-#   spec_id: SPEC-XXX-XXX
-#   title: "Task title"
-#   started_at: "2025-12-02T10:00:00Z"
-#   status: in_progress
-#   notes: "Optional progress notes"
+# Task TASK-20251228-REFACTOR-DEDUP-001 completed
+# Moved to done.yaml on 2025-12-28

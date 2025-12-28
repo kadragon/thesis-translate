@@ -41,6 +41,30 @@ from src.utils.token_counter import TokenCounter
 logger = logging.getLogger(__name__)
 
 
+class NoOpProgress:
+    """No-operation progress handler for cases where progress tracking is disabled.
+
+    This class provides a safe default for optional Progress parameters,
+    allowing methods to call update() without None checks.
+
+    Trace: SPEC-REFACTOR-VALIDATION-001, TASK-20251228-REFACTOR-VALIDATION-001
+    """
+
+    def update(
+        self,
+        task_id: TaskID | None = None,
+        *,
+        completed: float | None = None,
+        total: float | None = None,
+        **kwargs,
+    ) -> None:
+        """Silently ignore all progress updates."""
+
+    def add_task(self, _description: str, **_kwargs) -> TaskID:
+        """Return a dummy task ID."""
+        return TaskID(0)
+
+
 @dataclass(slots=True)
 class TranslationRunResult:
     """Aggregate metrics for a translation invocation."""
@@ -50,22 +74,33 @@ class TranslationRunResult:
     duration_seconds: float
 
 
-class TransientTranslationError(Exception):
-    """Raised when a retryable error occurs during translation."""
+class TranslationError(Exception):
+    """Raised when an error occurs during translation.
 
-    def __init__(self, message: str = "OpenAI API 호출 실패") -> None:
-        super().__init__(message)
+    Args:
+        is_transient: True if error is retryable, False if permanent
+        message: Error message (defaults based on is_transient)
+    """
 
-
-class PermanentTranslationError(Exception):
-    """Raised when a non-retryable error occurs during translation."""
-
-    def __init__(self, message: str = "응답에 번역 결과가 없습니다.") -> None:
+    def __init__(self, is_transient: bool, message: str | None = None) -> None:
+        self.is_transient = is_transient
+        if message is None:
+            message = (
+                "OpenAI API 호출 실패"
+                if is_transient
+                else "응답에 번역 결과가 없습니다."
+            )
         super().__init__(message)
 
 
 class StreamingTranslator:
     """Translator for academic papers using OpenAI Chat Completions API."""
+
+    # Trace: SPEC-REFACTOR-CONSTANTS-001, TASK-20251228-REFACTOR-CONSTANTS-001
+    # Constants for model invocation and token estimation
+    API_TIMEOUT_SECONDS = 180.0
+    ESTIMATED_OUTPUT_TOKEN_RATIO = 1.3
+    KOREAN_CHAR_TO_TOKEN_RATIO = 2.5
 
     def __init__(  # noqa: PLR0913
         self,
@@ -178,6 +213,7 @@ class StreamingTranslator:
             yield chunk_index, buffer
 
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC3
+    # Trace: SPEC-REFACTOR-VALIDATION-001, TASK-20251228-REFACTOR-VALIDATION-001
     def _invoke_model(
         self,
         chunk_index: int,
@@ -185,11 +221,29 @@ class StreamingTranslator:
         progress: Progress | None = None,
         task_id: TaskID | None = None,
     ) -> str:
-        """Call OpenAI for a single chunk and return translated content."""
-        # Constants for estimation and timeout
-        estimated_output_token_ratio = 1.3
-        korean_char_to_token_ratio = 2.5
-        api_timeout_seconds = 180.0
+        """Call OpenAI for a single chunk and return translated content.
+
+        Args:
+            chunk_index: Index of the chunk being translated
+            chunk_text: Text content to translate
+            progress: Optional progress tracker. If None, updates are skipped.
+            task_id: Optional task ID for progress tracking. Only used if
+                progress is not None.
+
+        Returns:
+            Translated text content
+
+        Raises:
+            TranslationError: If API call fails (transient) or response is
+                empty (permanent)
+        """
+        # Defensive: Replace None with NoOp handler to simplify downstream code
+        actual_progress: Progress | NoOpProgress
+        if progress is None:
+            actual_progress = NoOpProgress()
+            task_id = None
+        else:
+            actual_progress = progress
 
         prompt = self.config.PROMPT_TEMPLATE.format(
             glossary=self.config.glossary,
@@ -199,14 +253,14 @@ class StreamingTranslator:
         # 예상 출력 토큰 수 추정 (입력 토큰 수 기반)
         input_tokens = self.token_counter.count_tokens(chunk_text)
         # 한글 번역은 보통 입력보다 1.2-1.5배 정도
-        estimated_output_tokens = int(input_tokens * estimated_output_token_ratio)
+        estimated_output_tokens = int(input_tokens * self.ESTIMATED_OUTPUT_TOKEN_RATIO)
 
         try:
             response = self.client.chat.completions.create(
                 model=self.config.model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=self.config.temperature,
-                timeout=api_timeout_seconds,  # 3분 타임아웃 (큰 청크 처리용)
+                timeout=self.API_TIMEOUT_SECONDS,  # 3분 타임아웃 (큰 청크 처리용)
                 stream=True,  # 스트리밍 활성화
             )
 
@@ -221,27 +275,27 @@ class StreamingTranslator:
                     received_chars += len(chunk_content)
 
                     # 진행률 업데이트 (프로그레스바 또는 로그)
-                    if progress and task_id is not None:
-                        # 한글 평균: 1글자 ≈ 2.5 토큰
-                        estimated_tokens = int(
-                            received_chars * korean_char_to_token_ratio
-                        )
-                        completed = min(estimated_tokens, estimated_output_tokens)
-                        progress.update(
+                    # 한글 평균: 1글자 ≈ 2.5 토큰
+                    estimated_tokens = int(
+                        received_chars * self.KOREAN_CHAR_TO_TOKEN_RATIO
+                    )
+                    completed = min(estimated_tokens, estimated_output_tokens)
+                    if task_id is not None:
+                        actual_progress.update(
                             task_id, completed=completed, total=estimated_output_tokens
                         )
 
             content: str | None = "".join(content_parts) if content_parts else None
 
             # 완료 처리
-            if content and progress and task_id is not None:
-                progress.update(task_id, completed=estimated_output_tokens)
+            if content and task_id is not None:
+                actual_progress.update(task_id, completed=estimated_output_tokens)
         except Exception as exc:  # pragma: no cover - exercised via mocks
             logger.exception("OpenAI API 호출 중 오류 발생 (chunk=%d)", chunk_index)
-            raise TransientTranslationError from exc
+            raise TranslationError(is_transient=True) from exc
 
         if not content:
-            raise PermanentTranslationError
+            raise TranslationError(is_transient=False)
 
         return content
 
@@ -249,6 +303,7 @@ class StreamingTranslator:
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC4
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC5
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC6
+    # Trace: SPEC-REFACTOR-VALIDATION-001, TASK-20251228-REFACTOR-VALIDATION-001
     def _translate_chunk(
         self,
         chunk_index: int,
@@ -256,7 +311,26 @@ class StreamingTranslator:
         progress: Progress | None = None,
         task_id: TaskID | None = None,
     ) -> str | None:
-        """Translate a chunk with retry/backoff logic."""
+        """Translate a chunk with retry/backoff logic.
+
+        Args:
+            chunk_index: Index of the chunk being translated
+            chunk_text: Text content to translate
+            progress: Optional progress tracker. If None, updates are skipped.
+                The method is safe to call with progress=None.
+            task_id: Optional task ID for progress tracking. Only used if
+                progress is not None.
+
+        Returns:
+            Translated text content, or None if all retry attempts failed
+
+        Note:
+            Progress parameter is optional and can be None. When None, no progress
+            updates are performed. The method delegates to _invoke_model which handles
+            the None case with a NoOp progress handler internally.
+        """
+        # Defensive: Validate progress/task_id relationship
+        # Note: _invoke_model handles None progress internally with NoOpProgress
         max_attempts = self.max_retries + 1
 
         for attempt in range(1, max_attempts + 1):
@@ -264,21 +338,21 @@ class StreamingTranslator:
                 translation = self._invoke_model(
                     chunk_index, chunk_text, progress, task_id
                 )
-            except TransientTranslationError as exc:
-                logger.warning(
-                    "chunk=%d retry attempt=%d/%d: %s",
-                    chunk_index,
-                    attempt,
-                    max_attempts,
-                    exc,
-                )
-                if attempt == max_attempts:
-                    logger.exception("chunk=%d retry limit exceeded", chunk_index)
-                    return None
-                if self.retry_backoff_seconds > 0:
-                    time.sleep(self.retry_backoff_seconds)
-                continue
-            except PermanentTranslationError:
+            except TranslationError as exc:
+                if exc.is_transient:
+                    logger.warning(
+                        "chunk=%d retry attempt=%d/%d: %s",
+                        chunk_index,
+                        attempt,
+                        max_attempts,
+                        exc,
+                    )
+                    if attempt == max_attempts:
+                        logger.exception("chunk=%d retry limit exceeded", chunk_index)
+                        return None
+                    if self.retry_backoff_seconds > 0:
+                        time.sleep(self.retry_backoff_seconds)
+                    continue
                 logger.exception("chunk=%d permanent failure", chunk_index)
                 return None
             else:
@@ -291,6 +365,65 @@ class StreamingTranslator:
                 return translation
 
         return None  # pragma: no cover
+
+    # Trace: SPEC-REFACTOR-DEDUP-001, TASK-20251228-REFACTOR-DEDUP-001
+    # Trace: TEST-REFACTOR-DEDUP-001-AC1, TEST-REFACTOR-DEDUP-001-AC2
+    def _write_translations(
+        self,
+        results: dict[int, str],
+        chunks: list[tuple[int, str]],
+        output_file: str,
+    ) -> None:
+        """Write translated content to file with correct formatting.
+
+        Args:
+            results: Dictionary mapping chunk_index to translated content
+            chunks: List of (chunk_index, chunk_text) tuples in original order
+            output_file: Path to output file
+
+        Note:
+            Writes chunks in original order with double newline between chunks.
+            Only writes chunks that were successfully translated (exist in results).
+        """
+        # Extract translated content in original chunk order
+        translated_content = [
+            results[chunk_index] for chunk_index, _ in chunks if chunk_index in results
+        ]
+
+        with Path(output_file).open("w", encoding="utf-8") as file:
+            file.writelines(content + "\n\n" for content in translated_content)
+
+    # Trace: SPEC-REFACTOR-DEDUP-001, TASK-20251228-REFACTOR-DEDUP-001
+    # Trace: TEST-REFACTOR-DEDUP-001-AC3, TEST-REFACTOR-DEDUP-001-AC4
+    def _update_task_progress(
+        self,
+        success: bool,
+        chunk_index: int,
+        progress: Progress,
+        task_id: TaskID,
+        reason: str = "failed",
+    ) -> None:
+        """Update progress bar for a completed chunk.
+
+        Args:
+            success: True if chunk translated successfully, False if failed
+            chunk_index: Index of the chunk being updated
+            progress: Progress tracker instance
+            task_id: Task ID for the progress bar
+            reason: The reason for failure, displayed in the progress bar
+
+        Note:
+            Success: Marks task as 100% complete and hides it
+            Failure: Updates description to show failure and hides it
+        """
+        if success:
+            progress.update(task_id, completed=100, visible=False)
+        else:
+            progress.update(
+                task_id,
+                description=f"[red]Chunk {chunk_index} ({reason})",
+                visible=False,
+            )
 
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC1
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC7
@@ -363,7 +496,7 @@ class StreamingTranslator:
         overall_task: TaskID,
     ) -> TranslationRunResult:
         """Sequential translation (original behavior)."""
-        translated_content: list[str] = []
+        translated_results: dict[int, str] = {}
         successes = 0
         failures = 0
 
@@ -378,22 +511,24 @@ class StreamingTranslator:
             )
 
             if translation:
-                translated_content.append(translation)
+                translated_results[chunk_index] = translation
                 successes += 1
-                progress.update(chunk_task, completed=100, visible=False)
             else:
                 failures += 1
-                progress.update(
-                    chunk_task,
-                    description=f"[red]Chunk {chunk_index} (failed)",
-                    visible=False,
-                )
+
+            # Update task progress (unified method)
+            self._update_task_progress(
+                success=translation is not None,
+                chunk_index=chunk_index,
+                progress=progress,
+                task_id=chunk_task,
+            )
 
             # Update overall progress
             progress.update(overall_task, advance=1)
 
-        with Path(self.output_file).open("w", encoding="utf-8") as file:
-            file.writelines(content + "\n\n" for content in translated_content)
+        # Write translations (unified method)
+        self._write_translations(translated_results, chunks, self.output_file)
 
         return TranslationRunResult(
             successes=successes,
@@ -445,35 +580,33 @@ class StreamingTranslator:
                     if translation:
                         translated_results[chunk_index] = translation
                         successes += 1
-                        progress.update(chunk_task, completed=100, visible=False)
                     else:
                         failures += 1
-                        progress.update(
-                            chunk_task,
-                            description=f"[red]Chunk {chunk_index} (failed)",
-                            visible=False,
-                        )
+
+                    # Update task progress (unified method)
+                    self._update_task_progress(
+                        success=translation is not None,
+                        chunk_index=chunk_index,
+                        progress=progress,
+                        task_id=chunk_task,
+                    )
                 except Exception:
                     logger.exception("chunk=%d raised exception", chunk_index)
                     failures += 1
-                    progress.update(
-                        chunk_task,
-                        description=f"[red]Chunk {chunk_index} (error)",
-                        visible=False,
+                    # Update task progress for exception case
+                    self._update_task_progress(
+                        success=False,
+                        chunk_index=chunk_index,
+                        progress=progress,
+                        task_id=chunk_task,
+                        reason="error",
                     )
 
                 # Update overall progress
                 progress.update(overall_task, advance=1)
 
-        # Write results in original chunk order
-        translated_content = [
-            translated_results[chunk_index]
-            for chunk_index, _ in chunks
-            if chunk_index in translated_results
-        ]
-
-        with Path(self.output_file).open("w", encoding="utf-8") as file:
-            file.writelines(content + "\n\n" for content in translated_content)
+        # Write translations (unified method)
+        self._write_translations(translated_results, chunks, self.output_file)
 
         return TranslationRunResult(
             successes=successes,

@@ -2,7 +2,57 @@
 # Pending tasks sorted by priority (highest first)
 # Format: Each task must be a list item under pending_tasks with proper 2-space indentation
 
-pending_tasks: []
+pending_tasks:
+  - task_id: TASK-20251228-REFACTOR-DEDUP-001
+    spec_id: SPEC-REFACTOR-DEDUP-001
+    title: "Deduplicate sequential/parallel translation paths"
+    priority: 1
+    status: todo
+    description: |
+      Extract common logic from _translate_sequential() and _translate_parallel().
+      Create shared _write_translations() for file output.
+      Create unified _update_task_progress() for progress tracking.
+      Reduces code duplication from 70% to <30%.
+    acceptance_criteria:
+      - Both methods use shared _write_translations()
+      - Progress update logic consolidated
+      - File I/O operation unified
+      - All 69 tests pass with 100% coverage
+    estimated_effort: "2 hours"
+
+  - task_id: TASK-20251228-REFACTOR-EXCEPTIONS-001
+    spec_id: SPEC-REFACTOR-EXCEPTIONS-001
+    title: "Consolidate translation error classes"
+    priority: 2
+    status: todo
+    description: |
+      Merge TransientTranslationError and PermanentTranslationError into single
+      TranslationError(is_transient: bool, message: str) class.
+      Update exception handling in _translate_chunk() and _invoke_model().
+    acceptance_criteria:
+      - Single TranslationError class with is_transient flag
+      - All exception handling updated
+      - All 69 tests pass with 100% coverage
+      - No behavior change
+    estimated_effort: "1 hour"
+
+  - task_id: TASK-20251228-REFACTOR-CONSTANTS-001
+    spec_id: SPEC-REFACTOR-CONSTANTS-001
+    title: "Extract magic numbers to class constants"
+    priority: 3
+    status: todo
+    description: |
+      Move hardcoded values in _invoke_model() to class constants:
+      - API_TIMEOUT_SECONDS = 180.0
+      - ESTIMATED_OUTPUT_TOKEN_RATIO = 1.3
+      - KOREAN_CHAR_TO_TOKEN_RATIO = 2.5
+      Add CONFIG_INDENT constant for text_preprocessor.py (2 spaces).
+    acceptance_criteria:
+      - All magic numbers extracted to constants
+      - Constants grouped in class/module header
+      - All 69 tests pass with 100% coverage
+      - Improves maintainability for tuning
+    estimated_effort: "30 minutes"
 
 # Notes:
 # - Tasks are moved to current.yaml when work begins

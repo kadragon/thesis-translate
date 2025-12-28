@@ -3,11 +3,12 @@
 from unittest.mock import Mock, patch
 
 import pytest
+from rich.progress import Progress, TaskID
 
 from src.core.streaming_translator import (
-    PermanentTranslationError,
+    NoOpProgress,
     StreamingTranslator,
-    TransientTranslationError,
+    TranslationError,
     TranslationRunResult,
 )
 
@@ -95,7 +96,7 @@ class TestTranslator:
 
         translator.retry_backoff_seconds = 0.0
         responses = [
-            TransientTranslationError("temporary"),
+            TranslationError(is_transient=True, message="temporary"),
             "성공!",
         ]
         expected_calls = len(responses)
@@ -134,7 +135,9 @@ class TestTranslator:
             patch.object(
                 translator,
                 "_invoke_model",
-                side_effect=TransientTranslationError("still failing"),
+                side_effect=TranslationError(
+                    is_transient=True, message="still failing"
+                ),
             ) as mock_invoke,
             caplog.at_level("INFO"),
         ):
@@ -246,7 +249,7 @@ class TestTranslator:
 
         invoke_results = [
             "성공 번역",
-            PermanentTranslationError("fatal"),
+            TranslationError(is_transient=False, message="fatal"),
         ]
 
         def fake_invoke(
@@ -304,7 +307,7 @@ class TestTranslator:
         assert any("single line over limit" in message for message in caplog.messages)
 
     def test_invoke_model_empty_response(self):
-        """Test that empty API response raises PermanentTranslationError"""
+        """Test empty API response raises TranslationError (is_transient=False)"""
         config = _build_config()
         mock_client = Mock()
         mock_client.chat.completions.create.return_value = _create_streaming_response(
@@ -319,8 +322,9 @@ class TestTranslator:
         ):
             translator = StreamingTranslator(input_file="dummy")
 
-        with pytest.raises(PermanentTranslationError):
+        with pytest.raises(TranslationError) as exc_info:
             translator._invoke_model(1, "test chunk")
+        assert exc_info.value.is_transient is False
 
     def test_translate_chunk_retry_with_backoff(self):
         """Test that retry logic includes sleep backoff when configured"""
@@ -336,7 +340,7 @@ class TestTranslator:
             )
 
         responses = [
-            TransientTranslationError("first fail"),
+            TranslationError(is_transient=True, message="first fail"),
             "success",
         ]
 
@@ -662,3 +666,305 @@ class TestBalancedChunkDistribution:
                 f"Chunk {i + 1} has {chunk_lines} lines, "
                 f"expected ~{target_lines_per_chunk}"
             )
+
+
+# Trace: SPEC-REFACTOR-VALIDATION-001, TASK-20251228-REFACTOR-VALIDATION-001
+class TestNoOpProgress:
+    """Tests for NoOpProgress handler."""
+
+    def test_noop_progress_update_does_not_raise(self):
+        """AC-3: NoOp().update() returns None, does not raise"""
+        noop = NoOpProgress()
+
+        # Should not raise any exception
+        noop.update()
+
+        # Should accept all valid parameters
+        noop.update(TaskID(1), completed=50, total=100, description="test")
+
+    def test_noop_progress_add_task_returns_task_id(self):
+        """NoOp.add_task() returns a TaskID without raising"""
+        noop = NoOpProgress()
+        task_id = noop.add_task("test task", total=100)
+
+        # TaskID is a NewType wrapper around int, so it's just an int at runtime
+        assert task_id is not None
+        # Should return the dummy TaskID(0)
+        assert task_id == 0
+
+
+class TestProgressNoneHandling:
+    """Tests for progress=None defensive handling."""
+
+    def test_translate_chunk_accepts_progress_none(self):
+        """AC-1: _translate_chunk() accepts progress=None without exception"""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy")
+
+        # Mock the API response
+        mock_response = _create_streaming_response("번역된 텍스트")
+        with patch.object(
+            translator.client.chat.completions, "create", return_value=mock_response
+        ):
+            # Should not raise when progress=None
+            result = translator._translate_chunk(
+                chunk_index=1, chunk_text="Hello world", progress=None, task_id=None
+            )
+
+        assert result == "번역된 텍스트"
+
+    def test_invoke_model_handles_progress_none(self):
+        """AC-2: _invoke_model() handles progress=None, does not call update"""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy")
+
+        # Mock the API response
+        mock_response = _create_streaming_response("번역 결과")
+        with patch.object(
+            translator.client.chat.completions, "create", return_value=mock_response
+        ):
+            # Should not raise AttributeError on None.update()
+            result = translator._invoke_model(
+                chunk_index=1, chunk_text="Test", progress=None, task_id=None
+            )
+
+        assert result == "번역 결과"
+
+    def test_valid_progress_still_works(self):
+        """AC-5: Valid Progress object still works as before"""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy")
+
+        # Create real Progress instance
+        with Progress() as progress:
+            task_id = progress.add_task("test", total=100)
+
+            # Mock the API response
+            mock_response = _create_streaming_response("번역 완료")
+            with patch.object(
+                translator.client.chat.completions,
+                "create",
+                return_value=mock_response,
+            ):
+                result = translator._invoke_model(
+                    chunk_index=1,
+                    chunk_text="Test text",
+                    progress=progress,
+                    task_id=task_id,
+                )
+
+            assert result == "번역 완료"
+            # Progress should have been updated
+            task = progress.tasks[0]
+            assert task.completed > 0
+
+
+# Trace: SPEC-REFACTOR-DEDUP-001, TASK-20251228-REFACTOR-DEDUP-001
+class TestHelperMethods:
+    """Tests for deduplicated helper methods."""
+
+    def test_write_translations_creates_file_with_utf8(self, tmp_path):
+        """AC-2: _write_translations() creates output file with UTF-8 encoding"""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy")
+
+        output_file = tmp_path / "output.txt"
+        results = {1: "첫 번째", 2: "두 번째"}
+        chunks = [(1, "chunk1"), (2, "chunk2")]
+
+        translator._write_translations(results, chunks, str(output_file))
+
+        # File should exist and be readable with UTF-8
+        content = output_file.read_text(encoding="utf-8")
+        assert "첫 번째" in content
+        assert "두 번째" in content
+
+    def test_write_translations_correct_formatting(self, tmp_path):
+        """AC-1: _write_translations() writes with double newline between chunks"""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy")
+
+        output_file = tmp_path / "output.txt"
+        results = {1: "first", 2: "second", 3: "third"}
+        chunks = [(1, "c1"), (2, "c2"), (3, "c3")]
+
+        translator._write_translations(results, chunks, str(output_file))
+
+        content = output_file.read_text(encoding="utf-8")
+        # Should have exactly 5 newlines: first\n\nsecond\n\nthird\n\n
+        # That's 3 chunks * 2 newlines each = 6 newlines total
+        assert content == "first\n\nsecond\n\nthird\n\n"
+
+    def test_write_translations_skips_missing_chunks(self, tmp_path):
+        """_write_translations() only writes chunks that were successfully translated"""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy")
+
+        output_file = tmp_path / "output.txt"
+        # Chunk 2 is missing (failed translation)
+        results = {1: "first", 3: "third"}
+        chunks = [(1, "c1"), (2, "c2"), (3, "c3")]
+
+        translator._write_translations(results, chunks, str(output_file))
+
+        content = output_file.read_text(encoding="utf-8")
+        # Should only have chunks 1 and 3
+        assert content == "first\n\nthird\n\n"
+        assert "second" not in content
+
+    def test_update_task_progress_success(self):
+        """AC-3: _update_task_progress() marks success correctly"""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy")
+
+        with Progress() as progress:
+            chunk_task = progress.add_task("Test chunk", total=100)
+
+            translator._update_task_progress(
+                success=True, chunk_index=1, progress=progress, task_id=chunk_task
+            )
+
+            # Task should be marked as complete and hidden
+            task = progress.tasks[0]
+            # 100 is the total we set when adding the task
+            assert task.completed == task.total
+            assert not task.visible
+
+    def test_update_task_progress_failure(self):
+        """AC-4: _update_task_progress() marks failure correctly"""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy")
+
+        with Progress() as progress:
+            chunk_task = progress.add_task("Test chunk", total=100)
+
+            translator._update_task_progress(
+                success=False, chunk_index=1, progress=progress, task_id=chunk_task
+            )
+
+            # Task should be marked as failed and hidden
+            task = progress.tasks[0]
+            assert "(failed)" in task.description
+            assert not task.visible
+
+    def test_identical_output_sequential_parallel(self, tmp_path):
+        """AC-5: Both paths produce identical file output"""
+        input_file = tmp_path / "input.txt"
+        seq_output = tmp_path / "seq_output.txt"
+        par_output = tmp_path / "par_output.txt"
+
+        # Create test input
+        input_file.write_text("line1\nline2\nline3\n")
+
+        config = _build_config()
+
+        # Sequential translation
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            seq_translator = StreamingTranslator(
+                input_file=str(input_file),
+                output_file=str(seq_output),
+                max_token_length=5,
+                max_workers=1,
+            )
+
+        # Parallel translation
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            par_translator = StreamingTranslator(
+                input_file=str(input_file),
+                output_file=str(par_output),
+                max_token_length=5,
+                max_workers=3,
+            )
+
+        # Mock translation to return deterministic results
+        def fake_translate(
+            chunk_index: int, _chunk_text: str, _progress=None, _task_id=None
+        ):
+            return f"translated_chunk_{chunk_index}"
+
+        with (
+            patch.object(
+                seq_translator.token_counter,
+                "count_tokens",
+                side_effect=lambda text: len(text.splitlines()) * 5,
+            ),
+            patch.object(
+                seq_translator, "_translate_chunk", side_effect=fake_translate
+            ),
+        ):
+            seq_translator.translate()
+
+        with (
+            patch.object(
+                par_translator.token_counter,
+                "count_tokens",
+                side_effect=lambda text: len(text.splitlines()) * 5,
+            ),
+            patch.object(
+                par_translator, "_translate_chunk", side_effect=fake_translate
+            ),
+        ):
+            par_translator.translate()
+
+        # Files should be byte-for-byte identical
+        seq_content = seq_output.read_bytes()
+        par_content = par_output.read_bytes()
+        assert seq_content == par_content

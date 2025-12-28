@@ -1,0 +1,53 @@
+spec_id: SPEC-REFACTOR-EXCEPTIONS-001
+title: "Consolidate translation error classes into single TranslationError"
+status: draft
+
+given_when_then:
+  - given: "Two exception classes exist: TransientTranslationError and PermanentTranslationError (lines 53-65)"
+    when: "developer merges them into single TranslationError(is_transient: bool, message: str)"
+    then: "error handling code is simplified with unified exception type"
+
+  - given: "_invoke_model() raises TransientTranslationError on API failure"
+    when: "developer updates to raise TranslationError(is_transient=True, ...)"
+    then: "behavior unchanged, syntax simplified"
+
+  - given: "_invoke_model() raises PermanentTranslationError on missing content"
+    when: "developer updates to raise TranslationError(is_transient=False, ...)"
+    then: "behavior unchanged, intent clear via is_transient flag"
+
+acceptance_tests:
+  - id: TEST-REFACTOR-EXCEPTIONS-001-AC1
+    desc: "Single TranslationError class with is_transient boolean attribute"
+    expected: "Class has __init__(self, is_transient: bool, message: str) signature"
+
+  - id: TEST-REFACTOR-EXCEPTIONS-001-AC2
+    desc: "TranslationError(is_transient=True) raises on API timeout"
+    expected: "except TranslationError as e: e.is_transient == True works"
+
+  - id: TEST-REFACTOR-EXCEPTIONS-001-AC3
+    desc: "TranslationError(is_transient=False) raises on missing content"
+    expected: "except TranslationError as e: e.is_transient == False works"
+
+  - id: TEST-REFACTOR-EXCEPTIONS-001-AC4
+    desc: "Exception message customizable, defaults to appropriate text"
+    expected: "TranslationError(is_transient=True) has OpenAI API default message"
+
+  - id: TEST-REFACTOR-EXCEPTIONS-001-AC5
+    desc: "_translate_chunk() catches and re-raises with retries for transient errors"
+    expected: "All retry logic still functional, no behavior change"
+
+  - id: TEST-REFACTOR-EXCEPTIONS-001-AC6
+    desc: "Test coverage maintained at 100%"
+    expected: "pytest coverage report shows 100% for exception handling paths"
+
+dependencies:
+  - governance: "patterns.md (exception handling patterns)"
+  - related_spec: "SPEC-TRANSLATION-001"
+
+linked_tasks:
+  - TASK-20251228-REFACTOR-EXCEPTIONS-001
+
+notes:
+  - "Both exception classes have identical __init__ structure (lines 56-57, 63-64)"
+  - "Only difference is default message, which is_transient flag can replace"
+  - "Low-risk refactoring: behavior unchanged, pure consolidation"
