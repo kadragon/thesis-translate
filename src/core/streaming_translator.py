@@ -401,6 +401,7 @@ class StreamingTranslator:
         chunk_index: int,
         progress: Progress,
         task_id: TaskID,
+        reason: str = "failed",
     ) -> None:
         """Update progress bar for a completed chunk.
 
@@ -409,6 +410,7 @@ class StreamingTranslator:
             chunk_index: Index of the chunk being updated
             progress: Progress tracker instance
             task_id: Task ID for the progress bar
+            reason: The reason for failure, displayed in the progress bar
 
         Note:
             Success: Marks task as 100% complete and hides it
@@ -419,7 +421,7 @@ class StreamingTranslator:
         else:
             progress.update(
                 task_id,
-                description=f"[red]Chunk {chunk_index} (failed)",
+                description=f"[red]Chunk {chunk_index} ({reason})",
                 visible=False,
             )
 
@@ -592,10 +594,12 @@ class StreamingTranslator:
                     logger.exception("chunk=%d raised exception", chunk_index)
                     failures += 1
                     # Update task progress for exception case
-                    progress.update(
-                        chunk_task,
-                        description=f"[red]Chunk {chunk_index} (error)",
-                        visible=False,
+                    self._update_task_progress(
+                        success=False,
+                        chunk_index=chunk_index,
+                        progress=progress,
+                        task_id=chunk_task,
+                        reason="error",
                     )
 
                 # Update overall progress

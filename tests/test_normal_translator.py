@@ -890,10 +890,10 @@ class TestHelperMethods:
                 success=False, chunk_index=1, progress=progress, task_id=chunk_task
             )
 
-            # Task should be marked as failed and remain visible
+            # Task should be marked as failed and hidden
             task = progress.tasks[0]
             assert "(failed)" in task.description
-            assert not task.visible  # Changed to not visible for cleaner output
+            assert not task.visible
 
     def test_identical_output_sequential_parallel(self, tmp_path):
         """AC-5: Both paths produce identical file output"""
