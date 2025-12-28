@@ -4,12 +4,14 @@
 import logging
 import os
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 from src import config
 from src.core.streaming_translator import StreamingTranslator
 from src.utils.rich_logging import configure_logging
+from src.utils.rich_prompts import confirm_clear_file
 from src.utils.text_preprocessor import TextPreprocessor
 
 load_dotenv()
@@ -28,6 +30,16 @@ def main() -> None:
             ".env 파일에 OPENAI_API_KEY를 추가하거나 환경 변수를 직접 설정해주세요."
         )
         sys.exit(1)  # pragma: no cover
+
+    # 0.5. 기존 입력 파일 확인 및 초기화
+    input_path = Path(config.INPUT_FILE)
+    if (
+        input_path.exists()
+        and input_path.stat().st_size > 0
+        and confirm_clear_file(config.INPUT_FILE)
+    ):
+        input_path.write_text("", encoding="UTF-8")
+        logger.info("✅ 입력 파일이 초기화되었습니다.")
 
     # 1. 텍스트 전처리
     preprocessor = TextPreprocessor()

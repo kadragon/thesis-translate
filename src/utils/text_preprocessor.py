@@ -7,6 +7,7 @@ from pathlib import Path
 import clipboard
 
 from src import config
+from src.utils.rich_prompts import ask_menu_action, ask_start_page
 
 logger = logging.getLogger(__name__)
 
@@ -75,18 +76,9 @@ class TextPreprocessor:
         """Run the main loop for managing text translation."""
         while True:
             if self.page_number is None:
-                while True:
-                    start_page = input("시작 페이지 번호를 입력하세요: ")
-                    if start_page.isnumeric():
-                        self.page_number = int(start_page)
-                        break
+                self.page_number = ask_start_page()
 
-            menu_prompt = (
-                "번역을 진행하시겠습니까? "
-                "[A:추가 / B:종료 / E:페이지번호추가 / Enter:진행]: "
-            )
-
-            order = input(menu_prompt).upper()
+            order = ask_menu_action()
             if order == "A":
                 self.add_text_from_clipboard()
             elif order in ("", "C"):
