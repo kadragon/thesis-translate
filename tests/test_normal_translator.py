@@ -667,6 +667,32 @@ class TestBalancedChunkDistribution:
                 f"expected ~{target_lines_per_chunk}"
             )
 
+    def test_merge_tiny_last_chunk_allows_exceed_max(self):
+        """Tiny last chunk merges into previous even if it exceeds max."""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy", max_token_length=200)
+
+        lines = [f"line{i}\n" for i in range(5)]
+        token_counts = [190, 10, 10, 10, 10]  # Total 230, last chunk would be tiny
+
+        def count_tokens_mock(text: str) -> int:
+            return token_counts[lines.index(text)]
+
+        with patch.object(
+            translator.token_counter, "count_tokens", side_effect=count_tokens_mock
+        ):
+            chunks = list(translator.chunk_generator(lines))
+
+        assert len(chunks) == 1
+        assert chunks[0][0] == 1
+        assert chunks[0][1] == "".join(lines)
+
 
 # Trace: SPEC-REFACTOR-VALIDATION-001, TASK-20251228-REFACTOR-VALIDATION-001
 class TestNoOpProgress:
