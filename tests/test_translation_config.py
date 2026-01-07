@@ -107,3 +107,9 @@ class TestTranslationConfig:
             importlib.reload(config_module)
 
         assert "Missing required environment variables" in str(excinfo.value)
+
+    def test_prompt_requires_translation_only_output(self):
+        """AC-5: prompt instructs to output only translated text without source."""
+        template = TranslationConfig.PROMPT_TEMPLATE
+        assert "Output only the translated text" in template
+        assert "do not repeat the source text" in template
