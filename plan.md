@@ -7,4 +7,4 @@
 - [x] merge tiny last chunk into previous even if it exceeds max_token_length
 - [x] chunk merge respects max_token_length constraint
 - [x] refactor: extract chunk merge logic from chunk_generator to translate method
-- [ ] add model context/output token map with env fallback (gpt-5-mini: 400,000 context, 128,000 max output)
+- [x] add model context/output token map with env fallback (gpt-5-mini: 400,000 context, 128,000 max output)

@@ -2,6 +2,7 @@
 
 ## Updates
 - 2026-01-08: Tiny last chunk merge now happens in translate via _merge_tiny_last_chunk; chunk_generator no longer merges.
+- 2026-01-08: Added model token limits map with env overrides for MODEL_CONTEXT_LENGTH and MODEL_MAX_OUTPUT_TOKENS.
 - 2026-01-08: Chunk merge now respects max_token_length; tiny last chunk only merges if combined size is within limit.
 - 2026-01-07: Menu prompts accept lowercase inputs via case-insensitive choices.
 - 2026-01-07: Translation prompt must output only translated text (no source echo).
