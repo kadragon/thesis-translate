@@ -126,9 +126,7 @@ class StreamingTranslator:
 
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC2
     # Trace: SPEC-BALANCED-CHUNKS-001, AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7
-    def chunk_generator(  # noqa: PLR0912, PLR0915
-        self, lines: list[str]
-    ) -> ChunkIterator[tuple[int, str]]:
+    def chunk_generator(self, lines: list[str]) -> ChunkIterator[tuple[int, str]]:
         """Yield chunks using balanced distribution for parallel efficiency.
 
         Phase 1: Calculate total tokens across all lines
@@ -215,24 +213,42 @@ class StreamingTranslator:
             chunk_index += 1
             chunks.append((buffer, current_chunk_tokens, False))
 
-        # Merge tiny last chunk into previous if within max_token_length
-        if len(chunks) >= self.MIN_CHUNKS_FOR_MERGE:
-            last_text, last_tokens, last_oversized = chunks[-1]
-            prev_text, prev_tokens, prev_oversized = chunks[-2]
-            if (
-                not last_oversized
-                and not prev_oversized
-                and last_tokens < self.MIN_LAST_CHUNK_RATIO * target_chunk_size
-                and prev_tokens + last_tokens <= self.max_token_length
-            ):
-                chunks = [
-                    *chunks[:-2],
-                    (prev_text + last_text, prev_tokens + last_tokens, False),
-                ]
-
         for idx, (chunk_text, _chunk_tokens, _oversized) in enumerate(chunks, start=1):
             logger.info("chunk=%d boundary len=%d", idx, len(chunk_text))
             yield idx, chunk_text
+
+    def _merge_tiny_last_chunk(
+        self, chunks: list[tuple[int, str]]
+    ) -> list[tuple[int, str]]:
+        """Merge a tiny last chunk into the previous chunk when safe."""
+        if len(chunks) < self.MIN_CHUNKS_FOR_MERGE:
+            return chunks
+
+        token_counts = [
+            self.token_counter.count_tokens(chunk_text)
+            for _chunk_index, chunk_text in chunks
+        ]
+        total_tokens = sum(token_counts)
+        if total_tokens <= self.max_token_length:
+            return chunks
+
+        num_chunks = math.ceil(total_tokens / self.max_token_length)
+        target_chunk_size = total_tokens / num_chunks
+
+        last_tokens = token_counts[-1]
+        prev_tokens = token_counts[-2]
+        if last_tokens > self.max_token_length or prev_tokens > self.max_token_length:
+            return chunks
+
+        if (
+            last_tokens < self.MIN_LAST_CHUNK_RATIO * target_chunk_size
+            and prev_tokens + last_tokens <= self.max_token_length
+        ):
+            merged_text = chunks[-2][1] + chunks[-1][1]
+            merged_chunk = (chunks[-2][0], merged_text)
+            return [*chunks[:-2], merged_chunk]
+
+        return chunks
 
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC3
     # Trace: SPEC-REFACTOR-VALIDATION-001, TASK-20251228-REFACTOR-VALIDATION-001
@@ -470,6 +486,7 @@ class StreamingTranslator:
 
         # Materialize chunks for progress tracking
         chunks = list(self.chunk_generator(lines))
+        chunks = self._merge_tiny_last_chunk(chunks)
         total_chunks = len(chunks)
 
         # Create progress bar with rich
