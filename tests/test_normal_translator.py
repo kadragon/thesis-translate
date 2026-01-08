@@ -1,6 +1,6 @@
 # GENERATED FROM SPEC-TRANSLATION-001
 
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 import pytest
 from rich.progress import Progress, TaskID
@@ -697,8 +697,12 @@ class TestBalancedChunkDistribution:
         expected_chunks = 2
         assert len(chunks) == expected_chunks
 
-    def test_merge_tiny_last_chunk_when_within_max(self):
+    def test_merge_tiny_last_chunk_when_within_max(self, tmp_path):
         """Tiny last chunk merges into previous when within max_token_length."""
+        input_file = tmp_path / "input.txt"
+        output_file = tmp_path / "output.txt"
+        input_file.write_text("line1\nline2\nline3\n")
+
         config = _build_config()
         with (
             patch(
@@ -706,26 +710,36 @@ class TestBalancedChunkDistribution:
             ),
             patch("src.core.streaming_translator.OpenAI"),
         ):
-            translator = StreamingTranslator(input_file="dummy", max_token_length=200)
+            translator = StreamingTranslator(
+                input_file=str(input_file),
+                output_file=str(output_file),
+                max_token_length=100,
+                max_workers=1,
+            )
 
-        # prev=80, last=30 (tiny: <70% of ~55 target), combined=110 <= max=200
-        lines = ["line0\n", "line1\n"]
-        token_counts = [80, 30]
+        chunks = [
+            ("chunk1\n", 90, False),
+            ("chunk2\n", 40, False),
+            ("chunk3\n", 10, False),
+        ]
 
-        def count_tokens_mock(text: str) -> int:
-            for i, line in enumerate(lines):
-                if text == line:
-                    return token_counts[i]
-            return sum(token_counts[i] for i, line in enumerate(lines) if line in text)
+        def fake_translate(
+            chunk_index: int, _chunk_text: str, _progress=None, _task_id=None
+        ) -> str:
+            return f"translated_chunk_{chunk_index}"
 
-        with patch.object(
-            translator.token_counter, "count_tokens", side_effect=count_tokens_mock
+        with (
+            patch.object(translator, "_build_chunks", return_value=chunks),
+            patch.object(
+                translator, "_translate_chunk", side_effect=fake_translate
+            ) as mocked,
         ):
-            chunks = list(translator.chunk_generator(lines))
+            translator.translate()
 
-        # Should merge because 80+30=110 <= 200
-        assert len(chunks) == 1
-        assert chunks[0][1] == "".join(lines)
+        expected_calls = 2
+        assert mocked.call_count == expected_calls
+        mocked.assert_any_call(1, "chunk1\n", ANY, ANY)
+        mocked.assert_any_call(2, "chunk2\nchunk3\n", ANY, ANY)
 
 
 # Trace: SPEC-REFACTOR-VALIDATION-001, TASK-20251228-REFACTOR-VALIDATION-001

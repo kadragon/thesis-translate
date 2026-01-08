@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from typing import TYPE_CHECKING
 
 import pytest
@@ -33,3 +34,17 @@ def test_missing_required_env_vars() -> None:
 
     with pytest.raises(ValueError, match="Missing required environment variables"):
         _require_env(required)
+
+
+def test_model_token_limits_fallback_to_map(monkeypatch) -> None:
+    """Uses model map defaults when env overrides are absent."""
+    monkeypatch.setenv("OPENAI_MODEL", "gpt-5-mini")
+    monkeypatch.delenv("MODEL_CONTEXT_LENGTH", raising=False)
+    monkeypatch.delenv("MODEL_MAX_OUTPUT_TOKENS", raising=False)
+
+    importlib.reload(config)
+
+    expected_context = 400_000
+    expected_output = 128_000
+    assert expected_context == config.MODEL_CONTEXT_LENGTH
+    assert expected_output == config.MODEL_MAX_OUTPUT_TOKENS

@@ -39,6 +39,15 @@ def _require_env(required: dict[str, Callable[[str], object]]) -> dict[str, obje
     return values
 
 
+def _optional_int_env(name: str, default: int | None) -> int | None:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = _cast(raw, int, name)
+    assert isinstance(value, int)
+    return value
+
+
 _REQUIRED_VARS: dict[str, Callable[[str], object]] = {
     "OPENAI_MODEL": str,
     "TEMPERATURE": float,
@@ -67,10 +76,24 @@ _raw_max_workers = _env_values["TRANSLATION_MAX_WORKERS"]
 assert isinstance(_raw_max_workers, int)
 TRANSLATION_MAX_WORKERS: int = max(1, min(10, _raw_max_workers))
 
+_MODEL_TOKEN_LIMITS: dict[str, tuple[int, int]] = {
+    "gpt-5-mini": (400_000, 128_000),
+}
+_model_limits = _MODEL_TOKEN_LIMITS.get(OPENAI_MODEL)
+_default_context = _model_limits[0] if _model_limits else None
+_default_max_output = _model_limits[1] if _model_limits else None
+
+MODEL_CONTEXT_LENGTH = _optional_int_env("MODEL_CONTEXT_LENGTH", _default_context)
+MODEL_MAX_OUTPUT_TOKENS = _optional_int_env(
+    "MODEL_MAX_OUTPUT_TOKENS", _default_max_output
+)
+
 __all__: tuple[str, ...] = (
     "GLOSSARY_FILE",
     "INPUT_FILE",
     "MAX_TOKEN_LENGTH",
+    "MODEL_CONTEXT_LENGTH",
+    "MODEL_MAX_OUTPUT_TOKENS",
     "OPENAI_MODEL",
     "OUTPUT_FILE",
     "TEMPERATURE",
