@@ -667,6 +667,66 @@ class TestBalancedChunkDistribution:
                 f"expected ~{target_lines_per_chunk}"
             )
 
+    def test_merge_tiny_last_chunk_respects_max_token_length(self):
+        """Tiny last chunk does NOT merge if combined would exceed max."""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy", max_token_length=100)
+
+        # prev=80, last=30 (tiny: <70% of ~55 target), combined=110 > max=100
+        lines = ["line0\n", "line1\n"]
+        token_counts = [80, 30]
+
+        def count_tokens_mock(text: str) -> int:
+            for i, line in enumerate(lines):
+                if text == line:
+                    return token_counts[i]
+            return sum(token_counts[i] for i, line in enumerate(lines) if line in text)
+
+        with patch.object(
+            translator.token_counter, "count_tokens", side_effect=count_tokens_mock
+        ):
+            chunks = list(translator.chunk_generator(lines))
+
+        # Should NOT merge because 80+30=110 > 100
+        expected_chunks = 2
+        assert len(chunks) == expected_chunks
+
+    def test_merge_tiny_last_chunk_when_within_max(self):
+        """Tiny last chunk merges into previous when within max_token_length."""
+        config = _build_config()
+        with (
+            patch(
+                "src.core.streaming_translator.TranslationConfig", return_value=config
+            ),
+            patch("src.core.streaming_translator.OpenAI"),
+        ):
+            translator = StreamingTranslator(input_file="dummy", max_token_length=200)
+
+        # prev=80, last=30 (tiny: <70% of ~55 target), combined=110 <= max=200
+        lines = ["line0\n", "line1\n"]
+        token_counts = [80, 30]
+
+        def count_tokens_mock(text: str) -> int:
+            for i, line in enumerate(lines):
+                if text == line:
+                    return token_counts[i]
+            return sum(token_counts[i] for i, line in enumerate(lines) if line in text)
+
+        with patch.object(
+            translator.token_counter, "count_tokens", side_effect=count_tokens_mock
+        ):
+            chunks = list(translator.chunk_generator(lines))
+
+        # Should merge because 80+30=110 <= 200
+        assert len(chunks) == 1
+        assert chunks[0][1] == "".join(lines)
+
 
 # Trace: SPEC-REFACTOR-VALIDATION-001, TASK-20251228-REFACTOR-VALIDATION-001
 class TestNoOpProgress:

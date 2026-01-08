@@ -1,9 +1,0 @@
-# Current Task
-# Only one active task at a time
-# When starting work, move a task from backlog.yaml to here
-# When finished, move to done.yaml
-
-current_task: null
-
-# Task TASK-20251228-REFACTOR-DEDUP-001 completed
-# Moved to done.yaml on 2025-12-28

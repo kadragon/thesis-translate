@@ -56,6 +56,19 @@ class TestRichPrompts:
         mock_prompt_ask.assert_called_once()
         mock_console.print.assert_called()
 
+    @patch("src.utils.rich_prompts.Prompt.ask", return_value="a")
+    @patch("src.utils.rich_prompts.console")
+    def test_ask_menu_action_add_lowercase(self, mock_console, mock_prompt_ask):
+        """Test that ask_menu_action accepts lowercase 'a' for add text"""
+        # When
+        result = ask_menu_action()
+
+        # Then
+        assert result == "A"
+        assert mock_prompt_ask.call_args.kwargs["case_sensitive"] is False
+        mock_prompt_ask.assert_called_once()
+        mock_console.print.assert_called()
+
     @patch("src.utils.rich_prompts.Prompt.ask", return_value="")
     @patch("src.utils.rich_prompts.console")
     def test_ask_menu_action_proceed(self, mock_console, mock_prompt_ask):
@@ -80,10 +93,34 @@ class TestRichPrompts:
         mock_prompt_ask.assert_called_once()
         mock_console.print.assert_called()
 
+    @patch("src.utils.rich_prompts.Prompt.ask", return_value="e")
+    @patch("src.utils.rich_prompts.console")
+    def test_ask_menu_action_page_number_lowercase(self, mock_console, mock_prompt_ask):
+        """Test that ask_menu_action accepts lowercase 'e' for add page number"""
+        # When
+        result = ask_menu_action()
+
+        # Then
+        assert result == "E"
+        mock_prompt_ask.assert_called_once()
+        mock_console.print.assert_called()
+
     @patch("src.utils.rich_prompts.Prompt.ask", return_value="B")
     @patch("src.utils.rich_prompts.console")
     def test_ask_menu_action_quit(self, mock_console, mock_prompt_ask):
         """Test that ask_menu_action returns 'B' for quit"""
+        # When
+        result = ask_menu_action()
+
+        # Then
+        assert result == "B"
+        mock_prompt_ask.assert_called_once()
+        mock_console.print.assert_called()
+
+    @patch("src.utils.rich_prompts.Prompt.ask", return_value="b")
+    @patch("src.utils.rich_prompts.console")
+    def test_ask_menu_action_quit_lowercase(self, mock_console, mock_prompt_ask):
+        """Test that ask_menu_action accepts lowercase 'b' for quit"""
         # When
         result = ask_menu_action()
 

@@ -101,6 +101,8 @@ class StreamingTranslator:
     API_TIMEOUT_SECONDS = 180.0
     ESTIMATED_OUTPUT_TOKEN_RATIO = 1.3
     KOREAN_CHAR_TO_TOKEN_RATIO = 2.5
+    MIN_LAST_CHUNK_RATIO = 0.7
+    MIN_CHUNKS_FOR_MERGE = 2
 
     def __init__(  # noqa: PLR0913
         self,
@@ -124,7 +126,9 @@ class StreamingTranslator:
 
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC2
     # Trace: SPEC-BALANCED-CHUNKS-001, AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-7
-    def chunk_generator(self, lines: list[str]) -> ChunkIterator[tuple[int, str]]:
+    def chunk_generator(  # noqa: PLR0912, PLR0915
+        self, lines: list[str]
+    ) -> ChunkIterator[tuple[int, str]]:
         """Yield chunks using balanced distribution for parallel efficiency.
 
         Phase 1: Calculate total tokens across all lines
@@ -151,6 +155,7 @@ class StreamingTranslator:
         buffer = ""
         current_chunk_tokens = 0
         chunk_index = 0
+        chunks: list[tuple[str, int, bool]] = []
 
         for i, line in enumerate(lines):
             line_token_count = line_tokens[i]
@@ -163,7 +168,7 @@ class StreamingTranslator:
                     chunk_index,
                     len(line),
                 )
-                yield chunk_index, line
+                chunks.append((line, line_token_count, True))
                 continue
 
             # Check if adding this line would exceed target (and we have content)
@@ -180,8 +185,7 @@ class StreamingTranslator:
                 )
                 if should_finalize:
                     chunk_index += 1
-                    logger.info("chunk=%d boundary len=%d", chunk_index, len(buffer))
-                    yield chunk_index, buffer
+                    chunks.append((buffer, current_chunk_tokens, False))
 
                     # Check if the next line is oversized before buffering
                     if line_token_count > self.max_token_length:
@@ -191,7 +195,7 @@ class StreamingTranslator:
                             chunk_index,
                             len(line),
                         )
-                        yield chunk_index, line
+                        chunks.append((line, line_token_count, True))
                         buffer = ""
                         current_chunk_tokens = 0
                     else:
@@ -206,11 +210,29 @@ class StreamingTranslator:
                 buffer += line
                 current_chunk_tokens = candidate_tokens
 
-        # Yield final buffer if any content remains
+        # Capture final buffer if any content remains
         if buffer:
             chunk_index += 1
-            logger.info("chunk=%d boundary len=%d", chunk_index, len(buffer))
-            yield chunk_index, buffer
+            chunks.append((buffer, current_chunk_tokens, False))
+
+        # Merge tiny last chunk into previous if within max_token_length
+        if len(chunks) >= self.MIN_CHUNKS_FOR_MERGE:
+            last_text, last_tokens, last_oversized = chunks[-1]
+            prev_text, prev_tokens, prev_oversized = chunks[-2]
+            if (
+                not last_oversized
+                and not prev_oversized
+                and last_tokens < self.MIN_LAST_CHUNK_RATIO * target_chunk_size
+                and prev_tokens + last_tokens <= self.max_token_length
+            ):
+                chunks = [
+                    *chunks[:-2],
+                    (prev_text + last_text, prev_tokens + last_tokens, False),
+                ]
+
+        for idx, (chunk_text, _chunk_tokens, _oversized) in enumerate(chunks, start=1):
+            logger.info("chunk=%d boundary len=%d", idx, len(chunk_text))
+            yield idx, chunk_text
 
     # Trace: SPEC-TRANSLATION-001, TEST-TRANSLATION-001-AC3
     # Trace: SPEC-REFACTOR-VALIDATION-001, TASK-20251228-REFACTOR-VALIDATION-001

@@ -81,6 +81,7 @@ def ask_menu_action() -> str:
         "[bold cyan]👉 선택[/bold cyan]",
         choices=["A", "B", "E", ""],
         default="",
+        case_sensitive=False,
         show_choices=False,
         show_default=False,
         console=console,
