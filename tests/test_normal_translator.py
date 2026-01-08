@@ -718,19 +718,10 @@ class TestBalancedChunkDistribution:
             )
 
         chunks = [
-            (1, "chunk1\n"),
-            (2, "chunk2\n"),
-            (3, "chunk3\n"),
+            ("chunk1\n", 90, False),
+            ("chunk2\n", 40, False),
+            ("chunk3\n", 10, False),
         ]
-        token_map = {
-            "chunk1\n": 90,
-            "chunk2\n": 40,
-            "chunk3\n": 10,
-            "chunk2\nchunk3\n": 50,
-        }
-
-        def count_tokens_mock(text: str) -> int:
-            return token_map[text]
 
         def fake_translate(
             chunk_index: int, _chunk_text: str, _progress=None, _task_id=None
@@ -738,10 +729,7 @@ class TestBalancedChunkDistribution:
             return f"translated_chunk_{chunk_index}"
 
         with (
-            patch.object(translator, "chunk_generator", return_value=chunks),
-            patch.object(
-                translator.token_counter, "count_tokens", side_effect=count_tokens_mock
-            ),
+            patch.object(translator, "_build_chunks", return_value=chunks),
             patch.object(
                 translator, "_translate_chunk", side_effect=fake_translate
             ) as mocked,
