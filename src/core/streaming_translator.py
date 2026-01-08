@@ -215,7 +215,7 @@ class StreamingTranslator:
             chunk_index += 1
             chunks.append((buffer, current_chunk_tokens, False))
 
-        # Merge tiny last chunk into previous even if it exceeds max_token_length
+        # Merge tiny last chunk into previous if within max_token_length
         if len(chunks) >= self.MIN_CHUNKS_FOR_MERGE:
             last_text, last_tokens, last_oversized = chunks[-1]
             prev_text, prev_tokens, prev_oversized = chunks[-2]
@@ -223,6 +223,7 @@ class StreamingTranslator:
                 not last_oversized
                 and not prev_oversized
                 and last_tokens < self.MIN_LAST_CHUNK_RATIO * target_chunk_size
+                and prev_tokens + last_tokens <= self.max_token_length
             ):
                 chunks = [
                     *chunks[:-2],

@@ -1,9 +1,9 @@
 # AGENTS
 
 ## Updates
+- 2026-01-08: Chunk merge now respects max_token_length; tiny last chunk only merges if combined size is within limit.
 - 2026-01-07: Menu prompts accept lowercase inputs via case-insensitive choices.
 - 2026-01-07: Translation prompt must output only translated text (no source echo).
-- 2026-01-07: Chunking merges tiny last chunk (<70% of target) into previous even if it exceeds max token length.
 - 2026-01-08: SSD-based development process (.spec/.governance/.tasks) retired; key content migrated to AGENTS.md; folders slated for deletion.
 
 ## Governance
