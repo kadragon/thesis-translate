@@ -2,6 +2,7 @@
 # GENERATED FROM SPEC-TOKEN-COUNTER-001
 
 import threading
+from typing import Self
 
 import tiktoken
 
@@ -24,7 +25,7 @@ class TokenCounter:
     # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC3
     # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC8
     # Trace: SPEC-TOKEN-COUNTER-001, TEST-TOKEN-COUNTER-001-AC11
-    def __new__(cls) -> "TokenCounter":
+    def __new__(cls) -> Self:
         """Create or return the singleton instance with thread-safe initialization.
 
         Uses double-check locking pattern to ensure thread safety while
@@ -40,7 +41,7 @@ class TokenCounter:
                     cls._instance = super().__new__(cls)
                     # Initialize encoding only once when the instance is created
                     cls._encoding = tiktoken.get_encoding("cl100k_base")
-        return cls._instance
+        return cls._instance  # type: ignore[return-value]
 
     def __init__(self) -> None:
         """Initialization is handled in __new__ to ensure it runs only once."""
