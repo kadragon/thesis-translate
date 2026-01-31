@@ -8,7 +8,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 description = "A Python project for analyzing thesis data using OpenAI's API."
 dependencies = [
-    "openai==2.15.0",
+    "openai==2.16.0",
     "python-dotenv",
     "clipboard",
     "tiktoken",
