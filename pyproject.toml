@@ -23,7 +23,7 @@ thesis-translate = "src.main:main"
 [project.optional-dependencies]
 dev = [
     "ruff>=0.6.0",
-    "mypy>=1.20.2",
+    "mypy>=2.1.0",
     "pre-commit>=3.0.0",
     "pytest>=9.0.3",
     "pytest-cov>=5.0.0",
