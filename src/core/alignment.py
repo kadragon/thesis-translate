@@ -7,6 +7,7 @@ from pathlib import Path
 
 _PAGE_MARKER = re.compile(r"^p\.\d+$")
 _PREAMBLE = "(before first page marker)"
+_HANGUL = re.compile(r"[\uac00-\ud7a3]")
 
 
 def read_blocks(path: str) -> list[str]:
@@ -47,3 +48,17 @@ def find_misalignments(source: list[str], translation: list[str]) -> list[str]:
         )
         if source_count != translation_count
     ]
+
+
+def find_untranslated(translation: list[str]) -> list[str]:
+    """Return ``"<page> #<n>: <text>"`` for paragraphs containing no Hangul."""
+    found: list[str] = []
+    label, index = _PREAMBLE, 0
+    for block in translation:
+        if _PAGE_MARKER.match(block):
+            label, index = block, 0
+            continue
+        index += 1
+        if not _HANGUL.search(block):
+            found.append(f"{label} #{index}: {block[:60]}")
+    return found

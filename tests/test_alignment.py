@@ -1,6 +1,6 @@
 """Tests for source/translation block alignment checks."""
 
-from src.core.alignment import find_misalignments, read_blocks
+from src.core.alignment import find_misalignments, find_untranslated, read_blocks
 
 
 def test_read_blocks_returns_stripped_non_empty_lines(tmp_path):
@@ -41,4 +41,13 @@ def test_find_misalignments_reports_marker_sequence_mismatch():
 
     assert find_misalignments(source, translation) == [
         "page markers differ: source [p.1, p.2], translation [p.1, p.3]"
+    ]
+
+
+def test_find_untranslated_lists_blocks_without_hangul():
+    translation = ["p.1", "가.", "Alicia M. Pike Lacy, PhD", "p.2", "Not translated."]
+
+    assert find_untranslated(translation) == [
+        "p.1 #2: Alicia M. Pike Lacy, PhD",
+        "p.2 #1: Not translated.",
     ]

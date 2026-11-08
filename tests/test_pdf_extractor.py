@@ -116,6 +116,19 @@ def test_extract_pdf_text_invokes_pdftotext(tmp_path):
     assert args[0] == "pdftotext"
     assert str(pdf) in args
     assert args[-1] == "-"
+    assert "-f" not in args
+
+
+def test_extract_pdf_text_starts_from_first_pdf_page(tmp_path):
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF")
+    completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+
+    with patch("src.core.pdf_extractor.subprocess.run", return_value=completed) as run:
+        extract_pdf_text(str(pdf), first_pdf_page=2)
+
+    args = run.call_args.args[0]
+    assert args[args.index("-f") + 1] == "2"
 
 
 def test_extract_pdf_text_raises_when_pdf_missing(tmp_path):

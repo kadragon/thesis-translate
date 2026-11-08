@@ -12,14 +12,24 @@ _SENTENCE_END = (".", "?", "!", ":", '"', "'", "”", "’", ")")  # noqa: RUF00
 _PAGE_NUMBER = re.compile(r"^\d+$")
 
 
-def extract_pdf_text(pdf_path: str) -> str:
-    """Return the PDF text from pdftotext, with pages separated by form feeds."""
+def extract_pdf_text(pdf_path: str, first_pdf_page: int = 1) -> str:
+    """Return the PDF text from pdftotext, with pages separated by form feeds.
+
+    ``first_pdf_page`` skips leading PDF pages such as a download cover sheet.
+    """
     if not Path(pdf_path).is_file():
         msg = f"PDF file not found: {pdf_path}"
         raise FileNotFoundError(msg)
     try:
         result = subprocess.run(
-            ["pdftotext", "-enc", "UTF-8", pdf_path, "-"],
+            [
+                "pdftotext",
+                "-enc",
+                "UTF-8",
+                *(["-f", str(first_pdf_page)] if first_pdf_page > 1 else []),
+                pdf_path,
+                "-",
+            ],
             capture_output=True,
             text=True,
             check=True,

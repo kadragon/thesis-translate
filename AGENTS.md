@@ -27,9 +27,8 @@
 - SPEC-CONFIG-001: Env-backed config and glossary loading with missing-key validation.
 
 ## Archived Governance (from .governance/)
-- Required env: INPUT_FILE, OUTPUT_FILE (GLOSSARY_FILE is read by the translate-paper skill, not by code).
+- No env config: files are named after the PDF (`<stem>_en.txt` source, `<stem>_ko.txt` translation); glossary is `glossary.json` in repo root.
 - Coding style: prefer explicit typing/runtime validation for config; keep `Trace: SPEC-ID, TASK-ID` near top of touched modules.
-- Patterns: `_require_env` helper with casting; pytest `conftest.py` autouse fixture resets config between tests.
 - Learned patterns: NoOp handler, helper extraction for shared logic, prefer is_transient flag over exception hierarchy, entry-point pragma usage.
 - Task YAML rules: backlog/current/done split, 2-space indentation, multiline uses `|`.
 
