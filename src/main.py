@@ -49,7 +49,16 @@ def _extract(args: argparse.Namespace) -> int:
     except (FileNotFoundError, RuntimeError, OSError) as exc:
         logger.error("PDF 추출 실패: %s", exc)  # noqa: TRY400
         return 1
-    blocks = build_blocks(split_pages(raw), start_page=args.start_page)
+    pages = split_pages(raw)
+    blank = sum(1 for page in pages if not page.strip())
+    if not pages or blank * 2 > len(pages):
+        logger.error(
+            "텍스트가 없는 쪽이 %d/%d쪽입니다. 스캔본으로 보이며 OCR이 필요합니다.",
+            blank,
+            len(pages),
+        )
+        return 1
+    blocks = build_blocks(pages, start_page=args.start_page)
     write_blocks(blocks, output)
     logger.info("%d개 블록을 %s에 저장했습니다.", len(blocks), output)
     return 0

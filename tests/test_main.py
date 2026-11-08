@@ -96,6 +96,16 @@ def test_verify_warns_but_passes_on_short_translation(tmp_path, caplog):
     assert "길이 이상" in caplog.text
 
 
+def test_extract_refuses_pdf_without_text_layer(tmp_path):
+    out = tmp_path / "in.txt"
+
+    with patch("src.main.extract_pdf_text", return_value="\f \fBody.\f"):
+        code = main(["extract", "scan.pdf", "-o", str(out)])
+
+    assert code == 1
+    assert not out.exists()
+
+
 def _write(path, text):
     path.write_text(text, encoding="utf-8")
     return str(path)
