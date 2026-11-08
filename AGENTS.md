@@ -1,6 +1,7 @@
 # AGENTS
 
 ## Updates
+- 2026-11-08: `verify` also warns on missing source numbers, `Figure/Table N` without `그림/표 N`, and term-table violations (`glossary.json` + `<stem>_terms.json`, or `--glossary`); `extract` refuses scans (over half the pages blank); new `dual` command writes `<stem>_dual.txt`. translate-paper skill adds term-table and accuracy-review steps.
 - 2026-11-08: `extract` reads `pdftotext -bbox-layout` and splits paragraphs by line geometry (indent, short last line, heading lines, vertical gap) so indent-only layouts like two-column IEEE no longer come out as one blob; `verify` warns when a translation is under 0.3x its source length.
 - 2026-11-08: OpenAI translation pipeline removed. Claude translates directly via `.claude/skills/translate-paper`; CLI is now `thesis-translate extract|verify|format` (pdftotext-based PDF extraction, structure check). Archived entries below that mention chunks, retries, workers or OpenAI describe removed code.
 - 2026-01-08: Tiny last chunk merge now happens in translate via _merge_tiny_last_chunk; chunk_generator no longer merges.
