@@ -8,6 +8,9 @@ from pathlib import Path
 _PAGE_MARKER = re.compile(r"^p\.\d+$")
 _PREAMBLE = "(before first page marker)"
 _HANGUL = re.compile(r"[\uac00-\ud7a3]")
+# Korean runs ~0.5-0.6x the English character count; far below hints at omission.
+_MIN_RATIO = 0.3
+_MIN_SOURCE_CHARS = 150
 
 
 def read_blocks(path: str) -> list[str]:
@@ -61,4 +64,24 @@ def find_untranslated(translation: list[str]) -> list[str]:
         index += 1
         if not _HANGUL.search(block):
             found.append(f"{label} #{index}: {block[:60]}")
+    return found
+
+
+def find_length_outliers(source: list[str], translation: list[str]) -> list[str]:
+    """Return ``"<page> #<n>: ratio <r>: <source>"`` for suspiciously short blocks.
+
+    Assumes the two block lists are already aligned.
+    """
+    found: list[str] = []
+    label, index = _PREAMBLE, 0
+    for src, dst in zip(source, translation, strict=False):
+        if _PAGE_MARKER.match(src):
+            label, index = src, 0
+            continue
+        index += 1
+        if len(src) < _MIN_SOURCE_CHARS:
+            continue
+        ratio = len(dst) / len(src)
+        if ratio < _MIN_RATIO:
+            found.append(f"{label} #{index}: ratio {ratio:.2f}: {src[:60]}")
     return found

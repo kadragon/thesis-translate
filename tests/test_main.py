@@ -84,6 +84,18 @@ def test_verify_warns_but_passes_on_untranslated_paragraph(tmp_path, caplog):
     assert "Still English." in caplog.text
 
 
+def test_verify_warns_but_passes_on_short_translation(tmp_path, caplog):
+    src = tmp_path / "src.txt"
+    dst = tmp_path / "dst.txt"
+    body = "Long sentence here. " * 20
+    src.write_text(f"  p.1\n\n  {body}\n\n", encoding="utf-8")
+    dst.write_text("  p.1\n\n  짧다.\n\n", encoding="utf-8")
+
+    with patch("src.main.configure_logging"):
+        assert main(["verify", str(src), str(dst)]) == 0
+    assert "길이 이상" in caplog.text
+
+
 def test_format_indents_output_file(tmp_path):
     dst = tmp_path / "dst.txt"
     dst.write_text("p.1\n\n가.\n", encoding="utf-8")

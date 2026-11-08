@@ -6,7 +6,12 @@ import argparse
 import logging
 from pathlib import Path
 
-from src.core.alignment import find_misalignments, find_untranslated, read_blocks
+from src.core.alignment import (
+    find_length_outliers,
+    find_misalignments,
+    find_untranslated,
+    read_blocks,
+)
 from src.core.pdf_extractor import (
     build_blocks,
     extract_pdf_text,
@@ -36,14 +41,17 @@ def _extract(args: argparse.Namespace) -> int:
 
 
 def _verify(args: argparse.Namespace) -> int:
+    source = read_blocks(args.source)
     translation = read_blocks(args.translation)
-    problems = find_misalignments(read_blocks(args.source), translation)
+    problems = find_misalignments(source, translation)
     for problem in problems:
         logger.error(problem)
     for block in find_untranslated(translation):
         logger.warning("한글 없음: %s", block)
     if problems:
         return 1
+    for outlier in find_length_outliers(source, translation):
+        logger.warning("길이 이상(누락 의심): %s", outlier)
     logger.info("원문과 번역문의 문단·페이지 구조가 일치합니다.")
     return 0
 

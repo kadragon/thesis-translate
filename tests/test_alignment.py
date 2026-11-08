@@ -1,6 +1,11 @@
 """Tests for source/translation block alignment checks."""
 
-from src.core.alignment import find_misalignments, find_untranslated, read_blocks
+from src.core.alignment import (
+    find_length_outliers,
+    find_misalignments,
+    find_untranslated,
+    read_blocks,
+)
 
 
 def test_read_blocks_returns_stripped_non_empty_lines(tmp_path):
@@ -51,3 +56,22 @@ def test_find_untranslated_lists_blocks_without_hangul():
         "p.1 #2: Alicia M. Pike Lacy, PhD",
         "p.2 #1: Not translated.",
     ]
+
+
+def test_find_length_outliers_flags_suspiciously_short_translation():
+    long_source = "Word " * 60
+    translation_ok = "가" * 150
+    translation_short = "가" * 20
+    source = ["p.1", long_source, long_source]
+    translation = ["p.1", translation_ok, translation_short]
+
+    assert find_length_outliers(source, translation) == [
+        f"p.1 #2: ratio 0.07: {long_source[:60]}"
+    ]
+
+
+def test_find_length_outliers_ignores_short_source_paragraphs():
+    source = ["p.1", "Figure 1: A caption."]
+    translation = ["p.1", "그림 1"]
+
+    assert find_length_outliers(source, translation) == []
