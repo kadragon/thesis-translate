@@ -7,9 +7,13 @@ import logging
 from pathlib import Path
 
 from src.core.alignment import (
+    find_figure_ref_mismatches,
     find_length_outliers,
     find_misalignments,
+    find_number_mismatches,
+    find_term_violations,
     find_untranslated,
+    load_terms,
     read_blocks,
 )
 from src.core.pdf_extractor import (
@@ -22,6 +26,17 @@ from src.utils.output_formatter import OutputFormatter
 from src.utils.rich_logging import configure_logging
 
 logger = logging.getLogger(__name__)
+
+
+def _sibling(source: str, suffix: str) -> Path:
+    """``paper_en.txt`` -> ``paper<suffix>`` next to it (else ``<stem><suffix>``)."""
+    path = Path(source)
+    stem = (
+        path.name.removesuffix("_en.txt")
+        if path.name.endswith("_en.txt")
+        else (path.stem)
+    )
+    return path.with_name(f"{stem}{suffix}")
 
 
 def _extract(args: argparse.Namespace) -> int:
@@ -50,8 +65,24 @@ def _verify(args: argparse.Namespace) -> int:
         logger.warning("한글 없음: %s", block)
     if problems:
         return 1
+    term_paths = (
+        [Path(path) for path in args.glossary]
+        if args.glossary
+        else [Path("glossary.json"), _sibling(args.source, "_terms.json")]
+    )
+    try:
+        terms = load_terms(term_paths)
+    except ValueError as exc:
+        logger.error("용어 파일 오류: %s", exc)  # noqa: TRY400
+        return 1
     for outlier in find_length_outliers(source, translation):
         logger.warning("길이 이상(누락 의심): %s", outlier)
+    for mismatch in find_number_mismatches(source, translation):
+        logger.warning("숫자 불일치: %s", mismatch)
+    for mismatch in find_figure_ref_mismatches(source, translation):
+        logger.warning("그림·표 참조: %s", mismatch)
+    for violation in find_term_violations(source, translation, terms):
+        logger.warning("용어 불일치: %s", violation)
     logger.info("원문과 번역문의 문단·페이지 구조가 일치합니다.")
     return 0
 
@@ -83,6 +114,11 @@ def _parser() -> argparse.ArgumentParser:
     verify = sub.add_parser("verify", help="원문·번역문 구조 일치 확인")
     verify.add_argument("source")
     verify.add_argument("translation")
+    verify.add_argument(
+        "--glossary",
+        action="append",
+        help="용어 파일(반복 가능). 기본값: glossary.json, <PDF 이름>_terms.json",
+    )
     verify.set_defaults(handler=_verify)
 
     fmt = sub.add_parser("format", help="번역 파일 들여쓰기 정리")

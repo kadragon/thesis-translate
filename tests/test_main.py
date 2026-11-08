@@ -96,6 +96,49 @@ def test_verify_warns_but_passes_on_short_translation(tmp_path, caplog):
     assert "길이 이상" in caplog.text
 
 
+def _write(path, text):
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
+def test_verify_warns_on_number_figure_and_term_problems(tmp_path, caplog):
+    src = _write(
+        tmp_path / "paper_en.txt",
+        "  p.1\n\n  Machine unlearning on 50 tasks (Figure 2).\n\n",
+    )
+    dst = _write(tmp_path / "paper_ko.txt", "  p.1\n\n  기계 망각을 40개 과제에서.\n\n")
+    _write(
+        tmp_path / "paper_terms.json",
+        '[{"term": "unlearning", "translation": "언러닝"}]',
+    )
+
+    with patch("src.main.configure_logging"):
+        assert main(["verify", src, dst]) == 0
+    assert "숫자 불일치" in caplog.text
+    assert "그림 2 없음" in caplog.text
+    assert "unlearning → 언러닝 없음" in caplog.text
+
+
+def test_verify_uses_explicit_glossary_option(tmp_path, caplog):
+    src = _write(tmp_path / "s.txt", "  p.1\n\n  A transformer.\n\n")
+    dst = _write(tmp_path / "d.txt", "  p.1\n\n  변환기.\n\n")
+    gloss = _write(
+        tmp_path / "g.json", '[{"term": "transformer", "translation": "트랜스포머"}]'
+    )
+
+    with patch("src.main.configure_logging"):
+        assert main(["verify", src, dst, "--glossary", gloss]) == 0
+    assert "transformer → 트랜스포머 없음" in caplog.text
+
+
+def test_verify_fails_on_malformed_terms_file(tmp_path):
+    src = _write(tmp_path / "s.txt", "  p.1\n\n  A.\n\n")
+    dst = _write(tmp_path / "d.txt", "  p.1\n\n  가.\n\n")
+    gloss = _write(tmp_path / "g.json", '{"not": "a list"}')
+
+    assert main(["verify", src, dst, "--glossary", gloss]) == 1
+
+
 def test_format_indents_output_file(tmp_path):
     dst = tmp_path / "dst.txt"
     dst.write_text("p.1\n\n가.\n", encoding="utf-8")

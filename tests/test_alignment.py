@@ -1,9 +1,15 @@
 """Tests for source/translation block alignment checks."""
 
+import pytest
+
 from src.core.alignment import (
+    find_figure_ref_mismatches,
     find_length_outliers,
     find_misalignments,
+    find_number_mismatches,
+    find_term_violations,
     find_untranslated,
+    load_terms,
     read_blocks,
 )
 
@@ -75,3 +81,84 @@ def test_find_length_outliers_ignores_short_source_paragraphs():
     translation = ["p.1", "그림 1"]
 
     assert find_length_outliers(source, translation) == []
+
+
+def test_find_number_mismatches_accepts_preserved_numbers_and_citations():
+    source = ["p.1", "Accuracy rose 12.5% in 2020 [3] (Smith, 2019)."]
+    translation = ["p.1", "2020년 정확도가 12.5% 올랐다[3](Smith, 2019)."]
+
+    assert find_number_mismatches(source, translation) == []
+
+
+def test_find_number_mismatches_reports_missing_and_extra_numbers():
+    source = ["p.1", "Fine.", "We used 1,024 samples and 3 seeds [7]."]
+    translation = ["p.1", "좋다.", "1,000개 표본과 시드 3개를 썼다[7]."]
+
+    assert find_number_mismatches(source, translation) == [
+        "p.1 #2: missing [1,024], extra [1,000]: We used 1,024 samples and 3 seeds [7]."
+    ]
+
+
+def test_find_number_mismatches_ignores_spelled_out_numbers_written_as_digits():
+    source = ["p.1", "Twenty tasks with ten classes each."]
+    translation = ["p.1", "클래스 10개로 된 과제 20개."]
+
+    assert find_number_mismatches(source, translation) == []
+
+
+def test_find_figure_ref_mismatches_handles_roman_and_uppercase_refs():
+    source = ["p.1", "TABLE III: Results (see FIG. 4).", "As Table IV shows."]
+    translation = ["p.1", "표 III: 결과(그림 4 참조).", "Table IV에서 보듯이."]
+
+    assert find_figure_ref_mismatches(source, translation) == [
+        "p.1 #2: 표 IV 없음: As Table IV shows."
+    ]
+
+
+def test_find_figure_ref_mismatches_requires_korean_figure_and_table_refs():
+    source = ["p.1", "See Fig. 2 and Table 1.", "Figure 3 shows it."]
+    translation = ["p.1", "그림 2와 표 1을 보라.", "Figure 3은 이를 보여 준다."]
+
+    assert find_figure_ref_mismatches(source, translation) == [
+        "p.1 #2: 그림 3 없음: Figure 3 shows it."
+    ]
+
+
+def test_find_term_violations_reports_missing_korean_term():
+    terms = [{"term": "unlearning", "translation": "언러닝"}]
+    source = ["p.1", "Machine unlearning works.", "Unlearning methods vary.", "Other."]
+    translation = ["p.1", "머신 언러닝은 작동한다.", "망각 기법은 다양하다.", "기타."]
+
+    assert find_term_violations(source, translation, terms) == [
+        "p.1 #2: unlearning → 언러닝 없음: Unlearning methods vary."
+    ]
+
+
+def test_find_term_violations_matches_plural_but_not_substrings():
+    terms = [{"term": "model", "translation": "모델"}]
+    source = ["p.1", "Two models.", "A modeling tool."]
+    translation = ["p.1", "두 가지.", "도구."]
+
+    assert find_term_violations(source, translation, terms) == [
+        "p.1 #1: model → 모델 없음: Two models."
+    ]
+
+
+def test_load_terms_merges_existing_files_and_skips_missing(tmp_path):
+    first = tmp_path / "glossary.json"
+    first.write_text('[{"term": "a", "translation": "가"}]', encoding="utf-8")
+    second = tmp_path / "paper_terms.json"
+    second.write_text('[{"term": "b", "translation": "나"}]', encoding="utf-8")
+
+    assert load_terms([first, tmp_path / "missing.json", second]) == [
+        {"term": "a", "translation": "가"},
+        {"term": "b", "translation": "나"},
+    ]
+
+
+def test_load_terms_rejects_malformed_entries(tmp_path):
+    bad = tmp_path / "terms.json"
+    bad.write_text('[{"term": "a"}]', encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"terms\.json"):
+        load_terms([bad])
