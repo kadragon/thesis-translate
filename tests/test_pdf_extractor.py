@@ -8,6 +8,7 @@ import pytest
 from src.core.pdf_extractor import (
     build_blocks,
     extract_pdf_text,
+    layout_to_text,
     split_pages,
     write_blocks,
 )
@@ -104,16 +105,18 @@ def test_write_blocks_uses_indented_paragraph_format(tmp_path):
     assert out.read_text(encoding="utf-8") == "  p.1\n\n  Body.\n\n"
 
 
-def test_extract_pdf_text_invokes_pdftotext(tmp_path):
+def test_extract_pdf_text_converts_bbox_layout(tmp_path):
     pdf = tmp_path / "paper.pdf"
     pdf.write_bytes(b"%PDF")
-    completed = subprocess.CompletedProcess([], 0, stdout="text\f", stderr="")
+    layout = _doc(_page(_flow(_block(_line(50, 300, 10, "Body.")))))
+    completed = subprocess.CompletedProcess([], 0, stdout=layout, stderr="")
 
     with patch("src.core.pdf_extractor.subprocess.run", return_value=completed) as run:
-        assert extract_pdf_text(str(pdf)) == "text\f"
+        assert extract_pdf_text(str(pdf)) == "Body.\f"
 
     args = run.call_args.args[0]
     assert args[0] == "pdftotext"
+    assert "-bbox-layout" in args
     assert str(pdf) in args
     assert args[-1] == "-"
     assert "-f" not in args
@@ -155,3 +158,161 @@ def test_build_blocks_merges_column_break_within_page():
         "Left column ends mid sentence in the right column.",
         "Next.",
     ]
+
+
+# --- bbox-layout paragraph detection -------------------------------------------
+
+
+def _line(x0, x1, y, text, height=9.0):
+    words = "".join(
+        f'<word xMin="{x0}" yMin="{y}" xMax="{x1}" yMax="{y + height}">{w}</word>'
+        for w in text.split()
+    )
+    box = f'xMin="{x0}" yMin="{y}" xMax="{x1}" yMax="{y + height}"'
+    return f"<line {box}>{words}</line>"
+
+
+def _block(*lines):
+    return f'<block xMin="0" yMin="0" xMax="0" yMax="0">{"".join(lines)}</block>'
+
+
+def _flow(*blocks):
+    return f"<flow>{''.join(blocks)}</flow>"
+
+
+def _page(*flows):
+    return f'<page width="612" height="792">{"".join(flows)}</page>'
+
+
+def _doc(*pages):
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"'
+        ' "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">\n'
+        '<html xmlns="http://www.w3.org/1999/xhtml"><head><title></title></head>'
+        f"<body><doc>{''.join(pages)}</doc></body></html>"
+    )
+
+
+def test_layout_splits_indented_paragraphs_in_two_column_page():
+    left = _block(
+        _line(59, 300, 10, "First paragraph starts"),
+        _line(49, 300, 22, "and ends here."),
+        _line(59, 300, 34, "Second paragraph"),
+        _line(49, 200, 46, "is short."),
+    )
+    right = _block(
+        _line(322, 563, 10, "Right column paragraph"),
+        _line(312, 563, 22, "continues."),
+    )
+
+    assert layout_to_text(_doc(_page(_flow(left), _flow(right)))) == (
+        "First paragraph starts\nand ends here.\n\n"
+        "Second paragraph\nis short.\n\n"
+        "Right column paragraph\ncontinues.\f"
+    )
+
+
+def test_layout_keeps_wrapped_line_that_follows_unfinished_sentence():
+    block = _block(
+        _line(49, 300, 10, "A sentence that wraps"),
+        _line(59, 300, 22, "onto an indented line."),
+    )
+
+    assert layout_to_text(_doc(_page(_flow(block)))) == (
+        "A sentence that wraps\nonto an indented line.\f"
+    )
+
+
+def test_layout_starts_new_item_at_each_hanging_indent():
+    block = _block(
+        _line(49, 300, 10, "• First item text"),
+        _line(58, 300, 22, "wraps here."),
+        _line(49, 300, 34, "• Second item"),
+        _line(58, 250, 46, "also wraps."),
+    )
+
+    assert layout_to_text(_doc(_page(_flow(block)))) == (
+        "• First item text\nwraps here.\n\n• Second item\nalso wraps.\f"
+    )
+
+
+def test_layout_splits_after_short_last_line_in_justified_text():
+    block = _block(
+        _line(49, 300, 10, "Justified line one of"),
+        _line(49, 300, 22, "a paragraph that ends"),
+        _line(49, 180, 34, "here."),
+        _line(49, 300, 46, "Unindented next paragraph"),
+        _line(49, 300, 58, "keeps the full width"),
+        _line(49, 220, 70, "too."),
+    )
+
+    assert layout_to_text(_doc(_page(_flow(block)))) == (
+        "Justified line one of\na paragraph that ends\nhere.\n\n"
+        "Unindented next paragraph\nkeeps the full width\ntoo.\f"
+    )
+
+
+def test_layout_keeps_ragged_right_text_together():
+    block = _block(
+        _line(49, 290, 10, "Ragged lines end anywhere."),
+        _line(49, 300, 22, "Even after a period"),
+        _line(49, 260, 34, "the paragraph goes on."),
+    )
+
+    assert layout_to_text(_doc(_page(_flow(block)))) == (
+        "Ragged lines end anywhere.\nEven after a period\nthe paragraph goes on.\f"
+    )
+
+
+def test_layout_splits_on_large_vertical_gap():
+    block = _block(
+        _line(49, 300, 10, "First block line"),
+        _line(49, 300, 22, "second line"),
+        _line(49, 300, 34, "third line"),
+        _line(49, 300, 60, "After a gap"),
+    )
+
+    assert layout_to_text(_doc(_page(_flow(block)))) == (
+        "First block line\nsecond line\nthird line\n\nAfter a gap\f"
+    )
+
+
+def test_layout_separates_pages_and_unescapes_entities():
+    first = _page(_flow(_block(_line(49, 300, 10, "Tom &amp; Jerry."))))
+    empty = _page()
+
+    assert layout_to_text(_doc(first, empty)) == "Tom & Jerry.\f\f"
+
+
+def test_layout_drops_control_characters_invalid_in_xml():
+    page = _page(_flow(_block(_line(49, 300, 10, "Bad\x02 glyph."))))
+
+    assert layout_to_text(_doc(page)) == "Bad glyph.\f"
+
+
+def test_layout_splits_heading_line_from_indented_paragraph():
+    block = _block(
+        _line(49, 180, 10, "A. Section Heading"),
+        _line(59, 300, 22, "The paragraph begins"),
+        _line(49, 300, 34, "and continues to the"),
+        _line(49, 250, 46, "end."),
+    )
+
+    assert layout_to_text(_doc(_page(_flow(block)))) == (
+        "A. Section Heading\n\nThe paragraph begins\nand continues to the\nend.\f"
+    )
+
+
+def test_layout_splits_centered_heading_from_indented_paragraph():
+    block = _block(
+        _line(73, 276, 10, "II. CENTERED SECTION HEADING"),
+        _line(59, 300, 22, "This section reviews"),
+        _line(49, 300, 34, "the formulation and"),
+        _line(49, 85, 46, "methods."),
+    )
+
+    assert layout_to_text(_doc(_page(_flow(block)))) == (
+        "II. CENTERED SECTION HEADING\n\n"
+        "This section reviews\nthe formulation and\nmethods.\f"
+    )
