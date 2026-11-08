@@ -1,78 +1,185 @@
-"""Main entry point for academic paper translation."""
-# Trace: SPEC-RICH-UX-001, TASK-20251226-RICH-UX-01
+"""CLI for preparing papers for Claude translation and checking the result."""
 
+from __future__ import annotations
+
+import argparse
 import logging
-import os
-import sys
+import subprocess
 from pathlib import Path
+from xml.etree.ElementTree import ParseError
 
-from dotenv import load_dotenv
-
-from src import config
-from src.core.streaming_translator import StreamingTranslator
+from src.core.alignment import (
+    find_figure_ref_mismatches,
+    find_length_outliers,
+    find_misalignments,
+    find_number_mismatches,
+    find_term_violations,
+    find_untranslated,
+    interleave,
+    load_terms,
+    read_blocks,
+)
+from src.core.pdf_extractor import (
+    build_blocks,
+    extract_pdf_text,
+    split_pages,
+    write_blocks,
+)
+from src.utils.output_formatter import OutputFormatter
 from src.utils.rich_logging import configure_logging
-from src.utils.rich_prompts import confirm_clear_file
-from src.utils.text_preprocessor import TextPreprocessor
 
-load_dotenv()
-
-# Configure logging before anything else
-configure_logging()
 logger = logging.getLogger(__name__)
 
+_INDENT = "  "
 
-def main() -> None:
-    """Main function for text preprocessing, translation, and output formatting."""
-    # 0. API 키 확인
-    if not os.environ.get("OPENAI_API_KEY"):
-        logger.error("에러: OPENAI_API_KEY 환경 변수가 설정되지 않았습니다.")
-        logger.error(
-            ".env 파일에 OPENAI_API_KEY를 추가하거나 환경 변수를 직접 설정해주세요."
-        )
-        sys.exit(1)  # pragma: no cover
 
-    # 0.5. 기존 입력 파일 확인 및 초기화
-    input_path = Path(config.INPUT_FILE)
-    if (
-        input_path.exists()
-        and input_path.stat().st_size > 0
-        and confirm_clear_file(config.INPUT_FILE)
-    ):
-        input_path.write_text("", encoding="UTF-8")
-        logger.info("✅ 입력 파일이 초기화되었습니다.")
+def _sibling(source: str, suffix: str) -> Path:
+    """``paper_en.txt`` -> ``paper<suffix>`` next to it (else ``<stem><suffix>``)."""
+    path = Path(source)
+    stem = (
+        path.name.removesuffix("_en.txt")
+        if path.name.endswith("_en.txt")
+        else (path.stem)
+    )
+    return path.with_name(f"{stem}{suffix}")
 
-    # 1. 텍스트 전처리
-    preprocessor = TextPreprocessor()
-    preprocessor.run()
 
-    # 2. 번역
+def _extract(args: argparse.Namespace) -> int:
+    output = args.output or f"{Path(args.pdf).stem}_en.txt"
+    if Path(output).exists() and not args.force:
+        logger.error("%s 파일이 이미 있습니다. 덮어쓰려면 --force를 쓰세요.", output)
+        return 1
     try:
-        translator = StreamingTranslator(input_file=config.INPUT_FILE)
-        metrics = translator.translate()
-
-        # 3. 출력 포맷팅
-        translator.format_output()
-
-        logger.info(
-            "번역 요약 - 성공: %d개, 실패: %d개, 소요 시간: %.2f초",
-            metrics.successes,
-            metrics.failures,
-            metrics.duration_seconds,
+        raw = extract_pdf_text(args.pdf, first_pdf_page=args.first_pdf_page)
+    except (
+        FileNotFoundError,
+        RuntimeError,
+        OSError,
+        subprocess.CalledProcessError,
+        ParseError,
+    ) as exc:
+        logger.error("PDF 추출 실패: %s", exc)  # noqa: TRY400
+        return 1
+    pages = split_pages(raw)
+    blank = sum(1 for page in pages if not page.strip())
+    if not pages or blank * 2 > len(pages):
+        logger.error(
+            "텍스트가 없는 쪽이 %d/%d쪽입니다. 스캔본으로 보이며 OCR이 필요합니다.",
+            blank,
+            len(pages),
         )
-        if metrics.failures > 0:
-            logger.warning(
-                "일부 번역 청크가 실패했습니다. 로그를 확인하고 재시도를 고려하세요."
-            )
-            sys.exit(2)
+        return 1
+    blocks = build_blocks(pages, start_page=args.start_page)
+    write_blocks(blocks, output)
+    logger.info("%d개 블록을 %s에 저장했습니다.", len(blocks), output)
+    return 0
 
-        logger.info("모든 작업이 완료되었습니다.")
-    except Exception:
-        logger.exception("번역 과정에서 예상치 못한 오류가 발생했습니다")
-        sys.exit(1)
+
+def _verify(args: argparse.Namespace) -> int:
+    source = read_blocks(args.source)
+    translation = read_blocks(args.translation)
+    problems = find_misalignments(source, translation)
+    for problem in problems:
+        logger.error(problem)
+    for block in find_untranslated(translation):
+        logger.warning("한글 없음: %s", block)
+    if problems:
+        return 1
+    term_paths = (
+        [Path(path) for path in args.glossary]
+        if args.glossary
+        else [Path("glossary.json"), _sibling(args.source, "_terms.json")]
+    )
+    try:
+        terms = load_terms(term_paths)
+    except ValueError as exc:
+        logger.error("용어 파일 오류: %s", exc)  # noqa: TRY400
+        return 1
+    for outlier in find_length_outliers(source, translation):
+        logger.warning("길이 이상(누락 의심): %s", outlier)
+    for mismatch in find_number_mismatches(source, translation):
+        logger.warning("숫자 불일치: %s", mismatch)
+    for mismatch in find_figure_ref_mismatches(source, translation):
+        logger.warning("그림·표 참조: %s", mismatch)
+    for violation in find_term_violations(source, translation, terms):
+        logger.warning("용어 불일치: %s", violation)
+    logger.info("원문과 번역문의 문단·페이지 구조가 일치합니다.")
+    return 0
+
+
+def _dual(args: argparse.Namespace) -> int:
+    source = read_blocks(args.source)
+    translation = read_blocks(args.translation)
+    problems = find_misalignments(source, translation)
+    if problems:
+        for problem in problems:
+            logger.error(problem)
+        return 1
+    output = Path(args.output) if args.output else _sibling(args.source, "_dual.txt")
+    output.write_text(
+        "".join(
+            "".join(f"{_INDENT}{line}\n" for line in group) + "\n"
+            for group in interleave(source, translation)
+        ),
+        encoding="utf-8",
+    )
+    logger.info("원문 병기본을 %s에 저장했습니다.", output)
+    return 0
+
+
+def _format(args: argparse.Namespace) -> int:
+    OutputFormatter.format_output(args.file)
+    return 0
+
+
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="thesis-translate")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    extract = sub.add_parser("extract", help="PDF를 문단 블록 입력 파일로 추출")
+    extract.add_argument("pdf")
+    extract.add_argument(
+        "--start-page", type=int, default=1, help="첫 페이지의 인쇄된 쪽 번호"
+    )
+    extract.add_argument(
+        "--first-pdf-page",
+        type=int,
+        default=1,
+        help="추출을 시작할 PDF 쪽(표지 건너뛰기)",
+    )
+    extract.add_argument("-o", "--output", help="기본값: <PDF 이름>_en.txt")
+    extract.add_argument("--force", action="store_true", help="기존 파일 덮어쓰기")
+    extract.set_defaults(handler=_extract)
+
+    verify = sub.add_parser("verify", help="원문·번역문 구조 일치 확인")
+    verify.add_argument("source")
+    verify.add_argument("translation")
+    verify.add_argument(
+        "--glossary",
+        action="append",
+        help="용어 파일(반복 가능). 기본값: glossary.json, <PDF 이름>_terms.json",
+    )
+    verify.set_defaults(handler=_verify)
+
+    dual = sub.add_parser("dual", help="원문·번역문 병기본 만들기")
+    dual.add_argument("source")
+    dual.add_argument("translation")
+    dual.add_argument("-o", "--output", help="기본값: <PDF 이름>_dual.txt")
+    dual.set_defaults(handler=_dual)
+
+    fmt = sub.add_parser("format", help="번역 파일 들여쓰기 정리")
+    fmt.add_argument("file")
+    fmt.set_defaults(handler=_format)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the CLI and return the process exit code."""
+    configure_logging()
+    args = _parser().parse_args(argv)
+    code: int = args.handler(args)
+    return code
 
 
 if __name__ == "__main__":  # pragma: no cover
-    # Entry point guard - tested through direct main() calls in test suite
-    # Integration testing of this guard would require subprocess execution
-    # which adds complexity without meaningful coverage benefit
-    main()
+    raise SystemExit(main())

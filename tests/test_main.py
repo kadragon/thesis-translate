@@ -1,247 +1,201 @@
-# GENERATED FROM SPEC-CLI-EXIT-001
+"""Tests for the thesis-translate CLI."""
 
-# Test main entry point
-
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+import logging
+import subprocess
+from unittest.mock import patch
+from xml.etree.ElementTree import ParseError
 
 from src.main import main
+from src.utils.rich_logging import configure_logging, get_console
 
 
-class TestMain:
-    # Trace: SPEC-CLI-EXIT-001, TEST-CLI-EXIT-001-AC1
-    @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
-    @patch("src.main.TextPreprocessor")
-    @patch("src.main.StreamingTranslator")
-    @patch("sys.exit")
-    @patch("pathlib.Path.exists", return_value=False)
-    def test_main_success_flow(
-        self,
-        _mock_path_exists,
-        mock_exit,
-        mock_translator_class,
-        mock_preprocessor_class,
-    ):
-        """Test successful main execution flow with metrics surfaced"""
-        mock_preprocessor = MagicMock()
-        mock_preprocessor_class.return_value = mock_preprocessor
+def test_extract_names_input_after_pdf(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
 
-        mock_translator = MagicMock()
-        mock_translator.translate.return_value = SimpleNamespace(
-            successes=3, failures=0, duration_seconds=1.23
-        )
-        mock_translator_class.return_value = mock_translator
+    with patch("src.main.extract_pdf_text", return_value="Body.\fMore.") as ext:
+        code = main(["extract", "/papers/Lacy 2022.pdf", "--start-page", "10"])
 
-        main()
+    assert code == 0
+    ext.assert_called_once_with("/papers/Lacy 2022.pdf", first_pdf_page=1)
+    assert (tmp_path / "Lacy 2022_en.txt").read_text(encoding="utf-8") == (
+        "  p.10\n\n  Body.\n\n  p.11\n\n  More.\n\n"
+    )
 
-        mock_preprocessor_class.assert_called_once()
-        mock_preprocessor.run.assert_called_once()
-        mock_translator_class.assert_called_once_with(input_file="_trimmed_text.txt")
-        mock_translator.translate.assert_called_once()
-        mock_translator.format_output.assert_called_once()
-        mock_exit.assert_not_called()
 
-    # Trace: SPEC-CLI-EXIT-001, TEST-CLI-EXIT-001-AC2
-    @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
-    @patch("src.main.TextPreprocessor")
-    @patch("src.main.StreamingTranslator")
-    @patch("src.main.logger")
-    @patch("sys.exit")
-    @patch("pathlib.Path.exists", return_value=False)
-    def test_main_partial_failures_warns(
-        self,
-        _mock_path_exists,
-        mock_exit,
-        mock_logger,
-        mock_translator_class,
-        mock_preprocessor_class,
-    ):
-        """Warn when some chunks fail"""
-        mock_preprocessor = MagicMock()
-        mock_preprocessor_class.return_value = mock_preprocessor
+def test_extract_passes_first_pdf_page(tmp_path):
+    out = tmp_path / "in.txt"
 
-        mock_translator = MagicMock()
-        mock_translator.translate.return_value = SimpleNamespace(
-            successes=2, failures=1, duration_seconds=2.5
-        )
-        mock_translator_class.return_value = mock_translator
+    with patch("src.main.extract_pdf_text", return_value="Body.") as ext:
+        main(["extract", "paper.pdf", "--first-pdf-page", "2", "-o", str(out)])
 
-        main()
+    ext.assert_called_once_with("paper.pdf", first_pdf_page=2)
 
-        mock_logger.warning.assert_any_call(
-            "일부 번역 청크가 실패했습니다. 로그를 확인하고 재시도를 고려하세요."
-        )
-        mock_exit.assert_called_once_with(2)
 
-    # Trace: SPEC-CLI-EXIT-001, TEST-CLI-EXIT-001-AC3
-    @patch.dict("os.environ", {}, clear=True)
-    @patch("src.main.TextPreprocessor")
-    @patch("sys.exit")
-    @patch("src.main.logger")
-    @patch("pathlib.Path.exists", return_value=False)
-    def test_main_missing_api_key(
-        self, _mock_path_exists, mock_logger, mock_exit, _mock_preprocessor_class
-    ):
-        """Test main with missing API key"""
-        main()
+def test_extract_refuses_to_overwrite_existing_input(tmp_path):
+    out = tmp_path / "in.txt"
+    out.write_text("cleaned by hand", encoding="utf-8")
 
-        mock_logger.error.assert_called()
-        mock_exit.assert_called_with(1)
+    with patch("src.main.extract_pdf_text", return_value="Body."):
+        code = main(["extract", "paper.pdf", "-o", str(out)])
 
-    @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
-    @patch("src.main.TextPreprocessor")
-    @patch("src.main.StreamingTranslator")
-    @patch("src.main.logger")
-    @patch("sys.exit")
-    @patch("pathlib.Path.exists", return_value=False)
-    def test_main_translation_error(
-        self,
-        _mock_path_exists,
-        mock_exit,
-        mock_logger,
-        mock_translator_class,
-        mock_preprocessor_class,
-    ):
-        """Test main with translation error"""
-        mock_preprocessor = MagicMock()
-        mock_preprocessor_class.return_value = mock_preprocessor
+    assert code == 1
+    assert out.read_text(encoding="utf-8") == "cleaned by hand"
 
-        mock_translator = MagicMock()
-        mock_translator.translate.side_effect = Exception("Translation failed")
-        mock_translator_class.return_value = mock_translator
 
-        main()
+def test_extract_overwrites_with_force(tmp_path):
+    out = tmp_path / "in.txt"
+    out.write_text("old", encoding="utf-8")
 
-        mock_logger.exception.assert_called()
-        mock_exit.assert_called_once_with(1)
+    with patch("src.main.extract_pdf_text", return_value="Body."):
+        code = main(["extract", "paper.pdf", "-o", str(out), "--force"])
 
-    # Test to exercise sys.exit(1) without mocking it
-    @patch.dict("os.environ", {}, clear=True)
-    @patch("src.main.TextPreprocessor")
-    @patch("pathlib.Path.exists", return_value=False)
-    def test_main_missing_api_key_exit_code(
-        self, _mock_path_exists, _mock_preprocessor_class
-    ):
-        """Test that missing API key causes actual exit(1)"""
-        # This test verifies sys.exit(1) is called (line 63)
-        with __import__("pytest").raises(SystemExit) as exc_info:
-            main()
+    assert code == 0
+    assert out.read_text(encoding="utf-8") == "  p.1\n\n  Body.\n\n"
 
-        assert exc_info.value.code == 1
 
-    @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
-    @patch("src.main.TextPreprocessor")
-    @patch("src.main.StreamingTranslator")
-    @patch("src.main.confirm_clear_file", return_value=True)
-    @patch("src.main.logger")
-    def test_main_clears_non_empty_file_when_user_confirms(
-        self,
-        mock_logger,
-        mock_confirm,
-        mock_translator_class,
-        mock_preprocessor_class,
-        tmp_path,
-    ):
-        """Test that non-empty input file is cleared when user confirms"""
-        # Create a non-empty input file
-        input_file = tmp_path / "test_input.txt"
-        input_file.write_text("existing content", encoding="UTF-8")
+def test_extract_returns_error_when_extraction_fails(tmp_path):
+    out = tmp_path / "in.txt"
+    with patch("src.main.extract_pdf_text", side_effect=RuntimeError("no poppler")):
+        assert main(["extract", "paper.pdf", "-o", str(out)]) == 1
 
-        mock_preprocessor = MagicMock()
-        mock_preprocessor_class.return_value = mock_preprocessor
 
-        mock_translator = MagicMock()
-        mock_translator.translate.return_value = SimpleNamespace(
-            successes=1, failures=0, duration_seconds=1.0
-        )
-        mock_translator_class.return_value = mock_translator
+def test_verify_passes_for_aligned_files(tmp_path):
+    src = tmp_path / "src.txt"
+    dst = tmp_path / "dst.txt"
+    src.write_text("  p.1\n\n  A.\n\n", encoding="utf-8")
+    dst.write_text("  p.1\n\n  가.\n\n", encoding="utf-8")
 
-        with patch("src.config.INPUT_FILE", str(input_file)):
-            main()
+    assert main(["verify", str(src), str(dst)]) == 0
 
-        # File should be cleared
-        assert input_file.read_text(encoding="UTF-8") == ""
-        mock_logger.info.assert_any_call("✅ 입력 파일이 초기화되었습니다.")
-        mock_confirm.assert_called_once_with(str(input_file))
 
-    @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
-    @patch("src.main.TextPreprocessor")
-    @patch("src.main.StreamingTranslator")
-    @patch("src.main.confirm_clear_file", return_value=False)
-    def test_main_keeps_non_empty_file_when_user_declines(
-        self, mock_confirm, mock_translator_class, mock_preprocessor_class, tmp_path
-    ):
-        """Test that non-empty input file is kept when user declines"""
-        # Create a non-empty input file
-        input_file = tmp_path / "test_input.txt"
-        original_content = "existing content"
-        input_file.write_text(original_content, encoding="UTF-8")
+def test_verify_fails_for_misaligned_files(tmp_path):
+    src = tmp_path / "src.txt"
+    dst = tmp_path / "dst.txt"
+    src.write_text("  p.1\n\n  A.\n\n  B.\n\n", encoding="utf-8")
+    dst.write_text("  p.1\n\n  가.\n\n", encoding="utf-8")
 
-        mock_preprocessor = MagicMock()
-        mock_preprocessor_class.return_value = mock_preprocessor
+    assert main(["verify", str(src), str(dst)]) == 1
 
-        mock_translator = MagicMock()
-        mock_translator.translate.return_value = SimpleNamespace(
-            successes=1, failures=0, duration_seconds=1.0
-        )
-        mock_translator_class.return_value = mock_translator
 
-        with patch("src.config.INPUT_FILE", str(input_file)):
-            main()
+def test_verify_warns_but_passes_on_untranslated_paragraph(tmp_path, caplog):
+    src = tmp_path / "src.txt"
+    dst = tmp_path / "dst.txt"
+    src.write_text("  p.1\n\n  A.\n\n", encoding="utf-8")
+    dst.write_text("  p.1\n\n  Still English.\n\n", encoding="utf-8")
 
-        # File should keep original content
-        assert input_file.read_text(encoding="UTF-8") == original_content
-        mock_confirm.assert_called_once_with(str(input_file))
+    with patch("src.main.configure_logging"):
+        assert main(["verify", str(src), str(dst)]) == 0
+    assert "Still English." in caplog.text
 
-    @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
-    @patch("src.main.TextPreprocessor")
-    @patch("src.main.StreamingTranslator")
-    @patch("src.main.confirm_clear_file")
-    def test_main_skips_prompt_for_empty_file(
-        self, mock_confirm, mock_translator_class, mock_preprocessor_class, tmp_path
-    ):
-        """Test that empty input file doesn't trigger prompt"""
-        # Create an empty input file
-        input_file = tmp_path / "test_input.txt"
-        input_file.write_text("", encoding="UTF-8")
 
-        mock_preprocessor = MagicMock()
-        mock_preprocessor_class.return_value = mock_preprocessor
+def test_verify_warns_but_passes_on_short_translation(tmp_path, caplog):
+    src = tmp_path / "src.txt"
+    dst = tmp_path / "dst.txt"
+    body = "Long sentence here. " * 20
+    src.write_text(f"  p.1\n\n  {body}\n\n", encoding="utf-8")
+    dst.write_text("  p.1\n\n  짧다.\n\n", encoding="utf-8")
 
-        mock_translator = MagicMock()
-        mock_translator.translate.return_value = SimpleNamespace(
-            successes=1, failures=0, duration_seconds=1.0
-        )
-        mock_translator_class.return_value = mock_translator
+    with patch("src.main.configure_logging"):
+        assert main(["verify", str(src), str(dst)]) == 0
+    assert "길이 이상" in caplog.text
 
-        with patch("src.config.INPUT_FILE", str(input_file)):
-            main()
 
-        # confirm_clear_file should not be called for empty file
-        mock_confirm.assert_not_called()
+def test_extract_refuses_pdf_without_text_layer(tmp_path):
+    out = tmp_path / "in.txt"
 
-    @patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"})
-    @patch("src.main.TextPreprocessor")
-    @patch("src.main.StreamingTranslator")
-    @patch("src.main.confirm_clear_file")
-    def test_main_skips_prompt_for_nonexistent_file(
-        self, mock_confirm, mock_translator_class, mock_preprocessor_class, tmp_path
-    ):
-        """Test that nonexistent input file doesn't trigger prompt"""
-        # Use a path that doesn't exist
-        input_file = tmp_path / "nonexistent.txt"
+    with patch("src.main.extract_pdf_text", return_value="\f \fBody.\f"):
+        code = main(["extract", "scan.pdf", "-o", str(out)])
 
-        mock_preprocessor = MagicMock()
-        mock_preprocessor_class.return_value = mock_preprocessor
+    assert code == 1
+    assert not out.exists()
 
-        mock_translator = MagicMock()
-        mock_translator.translate.return_value = SimpleNamespace(
-            successes=1, failures=0, duration_seconds=1.0
-        )
-        mock_translator_class.return_value = mock_translator
 
-        with patch("src.config.INPUT_FILE", str(input_file)):
-            main()
+def _write(path, text):
+    path.write_text(text, encoding="utf-8")
+    return str(path)
 
-        # confirm_clear_file should not be called for nonexistent file
-        mock_confirm.assert_not_called()
+
+def test_verify_warns_on_number_figure_and_term_problems(tmp_path, caplog):
+    src = _write(
+        tmp_path / "paper_en.txt",
+        "  p.1\n\n  Machine unlearning on 50 tasks (Figure 2).\n\n",
+    )
+    dst = _write(tmp_path / "paper_ko.txt", "  p.1\n\n  기계 망각을 40개 과제에서.\n\n")
+    _write(
+        tmp_path / "paper_terms.json",
+        '[{"term": "unlearning", "translation": "언러닝"}]',
+    )
+
+    with patch("src.main.configure_logging"):
+        assert main(["verify", src, dst]) == 0
+    assert "숫자 불일치" in caplog.text
+    assert "그림 2 없음" in caplog.text
+    assert "unlearning → 언러닝 없음" in caplog.text
+
+
+def test_verify_uses_explicit_glossary_option(tmp_path, caplog):
+    src = _write(tmp_path / "s.txt", "  p.1\n\n  A transformer.\n\n")
+    dst = _write(tmp_path / "d.txt", "  p.1\n\n  변환기.\n\n")
+    gloss = _write(
+        tmp_path / "g.json", '[{"term": "transformer", "translation": "트랜스포머"}]'
+    )
+
+    with patch("src.main.configure_logging"):
+        assert main(["verify", src, dst, "--glossary", gloss]) == 0
+    assert "transformer → 트랜스포머 없음" in caplog.text
+
+
+def test_verify_fails_on_malformed_terms_file(tmp_path):
+    src = _write(tmp_path / "s.txt", "  p.1\n\n  A.\n\n")
+    dst = _write(tmp_path / "d.txt", "  p.1\n\n  가.\n\n")
+    gloss = _write(tmp_path / "g.json", '{"not": "a list"}')
+
+    assert main(["verify", src, dst, "--glossary", gloss]) == 1
+
+
+def test_dual_writes_interleaved_file_named_after_source(tmp_path):
+    src = _write(tmp_path / "paper_en.txt", "  p.1\n\n  A.\n\n  B.\n\n")
+    dst = _write(tmp_path / "paper_ko.txt", "  p.1\n\n  가.\n\n  나.\n\n")
+
+    assert main(["dual", src, dst]) == 0
+    assert (tmp_path / "paper_dual.txt").read_text(encoding="utf-8") == (
+        "  p.1\n\n  A.\n  가.\n\n  B.\n  나.\n\n"
+    )
+
+
+def test_dual_refuses_misaligned_files(tmp_path):
+    src = _write(tmp_path / "paper_en.txt", "  p.1\n\n  A.\n\n  B.\n\n")
+    dst = _write(tmp_path / "paper_ko.txt", "  p.1\n\n  가.\n\n")
+
+    assert main(["dual", src, dst]) == 1
+    assert not (tmp_path / "paper_dual.txt").exists()
+
+
+def test_format_indents_output_file(tmp_path):
+    dst = tmp_path / "dst.txt"
+    dst.write_text("p.1\n\n가.\n", encoding="utf-8")
+
+    assert main(["format", str(dst)]) == 0
+    assert dst.read_text(encoding="utf-8") == "  p.1\n\n  가.\n"
+
+
+def test_extract_reports_pdftotext_failure_without_traceback(tmp_path):
+    out = tmp_path / "in.txt"
+    error = subprocess.CalledProcessError(1, ["pdftotext"])
+    with patch("src.main.extract_pdf_text", side_effect=error):
+        assert main(["extract", "paper.pdf", "-o", str(out)]) == 1
+
+
+def test_extract_reports_malformed_layout_without_traceback(tmp_path):
+    out = tmp_path / "in.txt"
+    with patch("src.main.extract_pdf_text", side_effect=ParseError("bad")):
+        assert main(["extract", "paper.pdf", "-o", str(out)]) == 1
+
+
+def test_configure_logging_prints_brackets_literally():
+    configure_logging()
+    console = get_console()
+    with console.capture() as capture:
+        logging.getLogger("t").error("source [p.1, p.2], we use [i] and [b]")
+
+    assert "[p.1, p.2], we use [i] and [b]" in capture.get()

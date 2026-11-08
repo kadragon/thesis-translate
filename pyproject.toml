@@ -6,12 +6,8 @@ build-backend = "hatchling.build"
 name = "analysis_thesis"
 version = "0.1.0"
 requires-python = ">=3.12"
-description = "A Python project for analyzing thesis data using OpenAI's API."
+description = "Extract academic papers from PDF and verify Claude translations."
 dependencies = [
-    "openai==3.35.1",
-    "python-dotenv",
-    "clipboard",
-    "tiktoken",
     "rich",
     "pre-commit==4.5.1",
     "ruff==0.15.8",
@@ -66,7 +62,3 @@ warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
 strict_equality = false
-
-[[tool.mypy.overrides]]
-module = "clipboard"
-ignore_missing_imports = true

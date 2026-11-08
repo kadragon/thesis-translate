@@ -1,100 +1,38 @@
 # ScholarTranslate
 
-이 프로젝트는 PDF파일의 OCR된 텍스트를 정리하고, OpenAI Batch API를 활용하여 영어 학술 논문을 한국어로 번역하는 도구입니다.
+영어 학술 논문 PDF를 한국어로 번역하는 도구입니다. 번역은 외부 API 대신 Claude Code가 직접 수행하고, 이 저장소의 CLI는 그 앞뒤 단계(PDF 추출, 구조 검증, 출력 정리)를 맡습니다.
 
-## 주요 기능
+## 흐름
 
-- **텍스트 전처리**: 클립보드에서 복사한 텍스트를 정리하고, 하이픈이나 불필요한 공백과 같은 일반적인 문제를 처리합니다. 페이지 번호 자동 채번 기능을 지원합니다.
-- **Batch API 번역**: 대용량 문서를 OpenAI Batch API를 통해 비동기적으로 처리하여 효율적인 번역을 수행합니다.
-- **OpenAI API 연동**: OpenAI의 GPT 모델을 활용하여 고품질의 학술적인 한국어 번역을 제공합니다.
-- **사용자 정의 용어집**: `glossary.json` 파일을 통해 사용자 정의 용어집을 지원하여 특정 학술 용어의 일관된 번역을 보장합니다.
-- **출력 형식 지정**: 번역된 결과물의 가독성을 높이기 위해 형식을 지정합니다.
+1. **추출**: `pdftotext`로 PDF를 읽어 문단 단위 원문 파일(`<PDF 이름>_en.txt`)을 만듭니다. 각 페이지 앞에 `p.N` 표시를 넣습니다.
+2. **정리·번역**: Claude Code가 입력 파일의 머리말·꼬리말·참고문헌을 정리한 뒤, 문단마다 1:1로 번역해 `<PDF 이름>_ko.txt`에 씁니다. 번역 후 kr-style 스킬로 번역투를 다듬습니다. 절차는 `.claude/skills/translate-paper/SKILL.md`에 있습니다.
+3. **검증**: 원문과 번역문의 `p.N` 표시와 페이지별 문단 수가 같은지 확인합니다.
+4. **정리**: 비어 있지 않은 모든 줄 앞에 공백 2칸 들여쓰기를 붙입니다.
 
-## 프로젝트 구조
+## 준비
 
-- `src/`:
-  - `main.py`: 전체 번역 워크플로우를 실행하는 주요 진입점입니다.
-  - `config.py`: 모델명, 파일 경로, 토큰 길이 등 프로젝트 전반에 사용되는 설정값을 정의합니다.
-  - `core/`:
-    - `batch_translator.py`: OpenAI Batch API를 사용하여 번역 요청을 생성하고, 배치 작업을 관리하며, 결과를 병합합니다.
-    - `translation_config.py`: OpenAI API 호출에 필요한 프롬프트 템플릿, 모델 설정, 용어집 로딩 등을 담당합니다.
-  - `utils/`:
-    - `text_preprocessor.py`: 클립보드에서 텍스트를 정리하고 준비하는 기능을 제공하며, 페이지 번호 자동 채번 로직을 포함합니다.
-- `glossary.json`: 사용자 정의 학술 용어와 해당 한국어 번역을 정의하는 JSON 파일입니다.
+- Python 3.12 이상, [uv](https://docs.astral.sh/uv/)
+- poppler(`pdftotext`): `brew install poppler`
 
-## 설정 및 사용법
+```bash
+uv sync
+cp glossary.json.example glossary.json   # 선택: 용어집
+```
 
-### 필수 요구 사항
+용어집 형식은 `[{"term": "...", "translation": "..."}]`입니다.
 
-- Python 3.x
-- OpenAI API 키
+## 사용법
 
-### 설치
+Claude Code에서 "이 논문 번역해줘"라고 PDF 경로와 함께 요청하면 아래 명령을 순서대로 실행합니다. 직접 실행할 수도 있습니다.
 
-1. 저장소를 클론합니다:
+```bash
+uv run thesis-translate extract paper.pdf --start-page 174   # → paper_en.txt
+uv run thesis-translate verify paper_en.txt paper_ko.txt     # 구조 비교, 미번역 문단 경고
+uv run thesis-translate format paper_ko.txt                  # 들여쓰기
+```
 
-   ```bash
-   git clone https://github.com/your-repo/academic-paper-translator.git
-   cd academic-paper-translator
-   ```
-
-2. `uv`를 사용하여 필요한 Python 패키지를 설치합니다:
-
-   ```bash
-   uv sync
-   ```
-
-### 설정
-
-1. **OpenAI API 키**: 프로젝트 루트 디렉토리에 `.env` 파일을 생성하고 OpenAI API 키를 추가합니다:
-
-   ```txt
-   OPENAI_API_KEY="your_openai_api_key_here"
-   ```
-
-2. **용어집**: 프로젝트 루트에 있는 `glossary.json` 파일을 편집하여 특정 학술 용어와 원하는 한국어 번역을 포함시킵니다. 형식은 각 항목이 `"term"` 및 `"translation"` 키를 가진 객체 배열입니다.
-
-3. **기타 설정**: `config.py` 파일을 열어 OpenAI 모델, 토큰 길이, 입출력 파일명 등 기타 설정을 조정할 수 있습니다.
-   - `TRANSLATION_MAX_RETRIES` / `TRANSLATION_RETRY_BACKOFF_SECONDS` 값을 통해 스트리밍 번역 재시도 횟수와 백오프 간격을 조절할 수 있습니다.
-
-### 번역기 실행
-
-1. 메인 스크립트를 실행합니다:
-
-   ```bash
-   uv run thesis-translate
-   ```
-
-   또는 직접 실행:
-
-   ```bash
-   PYTHONPATH=. uv run python src/main.py
-   ```
-
-2. 콘솔의 지시에 따릅니다.
-
-   - **시작 페이지 번호 입력**: 프로그램 시작 시, 페이지 번호 자동 채번을 위해 시작 페이지 번호를 입력합니다.
-   - **텍스트 추가 (A)**: 클립보드에서 텍스트를 복사한 후 `A`를 입력하여 현재 버퍼에 텍스트를 추가합니다.
-   - **페이지 번호 추가 (E)**: `E`를 입력하면 현재 페이지 번호가 파일에 기록되고 자동으로 1 증가합니다.
-   - **텍스트 정리 및 파일 저장 (Enter)**: 클립보드에서 텍스트를 복사한 후 `Enter`를 입력하면, 현재 버퍼의 텍스트를 정리하고 파일에 저장합니다. 이전에 `A`로 추가했던 텍스트와 합쳐져 처리됩니다.
-   - **단락 연결 (C)**: `A`와 유사하게 텍스트를 추가하지만, `Enter` 대신 `C`를 입력하면 현재 버퍼의 텍스트를 정리하고 파일에 저장합니다. 이전에 `A`로 추가했던 텍스트와 합쳐져 처리됩니다. (기존 `Enter`와 동일한 동작)
-   - **종료 (B)**: `B`를 입력하여 프로그램을 종료합니다.
-
----
-
-### 요약
-
-- **시작 페이지 번호 설정**: 프로그램 시작 시 한 번 입력
-- **텍스트 추가**: `A` → 클립보드 복사 → `Enter`
-- **페이지 번호 자동 채번**: `E` → `Enter` (페이지 번호 1 증가)
-- **텍스트 정리 및 저장**: 클립보드 복사 → `Enter` (이전 `A`로 추가된 텍스트와 합쳐서 처리)
-- **단락 연결**: 클립보드 복사 → `C` → `Enter` (이전 `A`로 추가된 텍스트와 합쳐서 처리)
-- **종료**: `B` → `Enter`
-
-## 기여
-
-자유롭게 저장소를 포크하고, 이슈를 열거나, 풀 리퀘스트를 제출해 주세요.
+`--start-page`에는 논문에 인쇄된 첫 페이지 번호를 넣습니다. 표지가 붙은 PDF는 `--first-pdf-page 2`로 건너뜁니다. 이미 있는 `_en.txt`는 `--force` 없이 덮어쓰지 않습니다. `verify`는 구조가 다르면 해당 페이지를 출력하고 종료 코드 1을 반환합니다.
 
 ## 라이선스
 
-이 프로젝트는 MIT 라이선스에 따라 배포됩니다. 자세한 내용은 `LICENSE` 파일을 참조하세요.
+MIT

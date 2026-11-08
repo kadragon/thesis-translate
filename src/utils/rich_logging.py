@@ -25,7 +25,7 @@ def configure_logging(level: int = logging.INFO) -> None:
             RichHandler(
                 console=get_console(),
                 rich_tracebacks=True,
-                markup=True,
+                markup=False,
                 show_path=False,
             )
         ],
