@@ -116,6 +116,15 @@ def test_find_figure_ref_mismatches_handles_roman_and_uppercase_refs():
     ]
 
 
+def test_find_figure_ref_mismatches_does_not_match_longer_roman_numeral():
+    source = ["p.1", "Table I lists them."]
+    translation = ["p.1", "표 II에 정리하였다."]
+
+    assert find_figure_ref_mismatches(source, translation) == [
+        "p.1 #1: 표 I 없음: Table I lists them."
+    ]
+
+
 def test_find_figure_ref_mismatches_requires_korean_figure_and_table_refs():
     source = ["p.1", "See Fig. 2 and Table 1.", "Figure 3 shows it."]
     translation = ["p.1", "그림 2와 표 1을 보라.", "Figure 3은 이를 보여 준다."]

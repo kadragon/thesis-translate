@@ -145,7 +145,7 @@ def find_figure_ref_mismatches(source: list[str], translation: list[str]) -> lis
             f"{label} #{index}: {korean} {number} 없음: {src[:60]}"
             for pattern, korean in _FIGURE_REFS
             for number in dict.fromkeys(pattern.findall(src))
-            if not re.search(rf"{korean}\s*{number}(?!\d)", dst)
+            if not re.search(rf"{korean}\s*{number}(?![\dIVXLC])", dst)
         )
     return found
 
