@@ -153,9 +153,11 @@ def find_figure_ref_mismatches(source: list[str], translation: list[str]) -> lis
 def load_terms(paths: list[Path]) -> list[dict[str, str]]:
     """Merge ``[{"term", "translation"}]`` files in order, skipping missing ones.
 
+    A term repeated later (case-insensitive) is dropped, so the shared glossary
+    listed first wins over a paper's term table.
     Raises ``ValueError`` naming the file when its content is malformed.
     """
-    terms: list[dict[str, str]] = []
+    terms: dict[str, dict[str, str]] = {}
     for path in paths:
         if not path.is_file():
             continue
@@ -168,11 +170,12 @@ def load_terms(paths: list[Path]) -> list[dict[str, str]]:
         ):
             msg = f'{path}: expected [{{"term": ..., "translation": ...}}]'
             raise ValueError(msg)
-        terms.extend(
-            {"term": entry["term"], "translation": entry["translation"]}
-            for entry in data
-        )
-    return terms
+        for entry in data:
+            terms.setdefault(
+                entry["term"].casefold(),
+                {"term": entry["term"], "translation": entry["translation"]},
+            )
+    return list(terms.values())
 
 
 def find_term_violations(

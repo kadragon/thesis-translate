@@ -166,6 +166,22 @@ def test_load_terms_merges_existing_files_and_skips_missing(tmp_path):
     ]
 
 
+def test_load_terms_keeps_first_entry_for_repeated_term(tmp_path):
+    glossary = tmp_path / "glossary.json"
+    glossary.write_text('[{"term": "unlearning", "translation": "언러닝"}]', "utf-8")
+    paper = tmp_path / "paper_terms.json"
+    paper.write_text(
+        '[{"term": "Unlearning", "translation": "탈학습"},'
+        ' {"term": "habit", "translation": "습관"}]',
+        "utf-8",
+    )
+
+    assert load_terms([glossary, paper]) == [
+        {"term": "unlearning", "translation": "언러닝"},
+        {"term": "habit", "translation": "습관"},
+    ]
+
+
 def test_load_terms_rejects_malformed_entries(tmp_path):
     bad = tmp_path / "terms.json"
     bad.write_text('[{"term": "a"}]', encoding="utf-8")
