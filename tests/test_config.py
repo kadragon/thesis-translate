@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
 from typing import TYPE_CHECKING
 
 import pytest
@@ -16,15 +15,8 @@ if TYPE_CHECKING:
 
 def test_config_constants() -> None:
     """Test that config constants are defined"""
-    assert hasattr(config, "OPENAI_MODEL")
-    assert hasattr(config, "TEMPERATURE")
-    assert hasattr(config, "MAX_TOKEN_LENGTH")
-    assert hasattr(config, "INPUT_FILE")
-    assert hasattr(config, "OUTPUT_FILE")
-    assert hasattr(config, "GLOSSARY_FILE")
-
-    assert isinstance(config.MAX_TOKEN_LENGTH, int)
-    assert isinstance(config.TEMPERATURE, int | float)
+    assert isinstance(config.INPUT_FILE, str)
+    assert isinstance(config.OUTPUT_FILE, str)
 
 
 def test_missing_required_env_vars() -> None:
@@ -34,17 +26,3 @@ def test_missing_required_env_vars() -> None:
 
     with pytest.raises(ValueError, match="Missing required environment variables"):
         _require_env(required)
-
-
-def test_model_token_limits_fallback_to_map(monkeypatch) -> None:
-    """Uses model map defaults when env overrides are absent."""
-    monkeypatch.setenv("OPENAI_MODEL", "gpt-5-mini")
-    monkeypatch.delenv("MODEL_CONTEXT_LENGTH", raising=False)
-    monkeypatch.delenv("MODEL_MAX_OUTPUT_TOKENS", raising=False)
-
-    importlib.reload(config)
-
-    expected_context = 400_000
-    expected_output = 128_000
-    assert expected_context == config.MODEL_CONTEXT_LENGTH
-    assert expected_output == config.MODEL_MAX_OUTPUT_TOKENS

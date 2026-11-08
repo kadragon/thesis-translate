@@ -39,65 +39,17 @@ def _require_env(required: dict[str, Callable[[str], object]]) -> dict[str, obje
     return values
 
 
-def _optional_int_env(name: str, default: int | None) -> int | None:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    value = _cast(raw, int, name)
-    assert isinstance(value, int)
-    return value
-
-
 _REQUIRED_VARS: dict[str, Callable[[str], object]] = {
-    "OPENAI_MODEL": str,
-    "TEMPERATURE": float,
-    "MAX_TOKEN_LENGTH": int,
     "INPUT_FILE": str,
     "OUTPUT_FILE": str,
-    "GLOSSARY_FILE": str,
-    "TRANSLATION_MAX_RETRIES": int,
-    "TRANSLATION_RETRY_BACKOFF_SECONDS": float,
-    "TRANSLATION_MAX_WORKERS": int,
 }
 
 _env_values = _require_env(_REQUIRED_VARS)
 
-OPENAI_MODEL: str = _env_values["OPENAI_MODEL"]  # type: ignore[assignment]
-TEMPERATURE: float = _env_values["TEMPERATURE"]  # type: ignore[assignment]
-MAX_TOKEN_LENGTH: int = _env_values["MAX_TOKEN_LENGTH"]  # type: ignore[assignment]
 INPUT_FILE: str = _env_values["INPUT_FILE"]  # type: ignore[assignment]
 OUTPUT_FILE: str = _env_values["OUTPUT_FILE"]  # type: ignore[assignment]
-GLOSSARY_FILE: str = _env_values["GLOSSARY_FILE"]  # type: ignore[assignment]
-TRANSLATION_MAX_RETRIES: int = _env_values["TRANSLATION_MAX_RETRIES"]  # type: ignore[assignment]
-TRANSLATION_RETRY_BACKOFF_SECONDS: float = _env_values[
-    "TRANSLATION_RETRY_BACKOFF_SECONDS"
-]  # type: ignore[assignment]
-_raw_max_workers = _env_values["TRANSLATION_MAX_WORKERS"]
-assert isinstance(_raw_max_workers, int)
-TRANSLATION_MAX_WORKERS: int = max(1, min(10, _raw_max_workers))
-
-_MODEL_TOKEN_LIMITS: dict[str, tuple[int, int]] = {
-    "gpt-5-mini": (400_000, 128_000),
-}
-_model_limits = _MODEL_TOKEN_LIMITS.get(OPENAI_MODEL)
-_default_context = _model_limits[0] if _model_limits else None
-_default_max_output = _model_limits[1] if _model_limits else None
-
-MODEL_CONTEXT_LENGTH = _optional_int_env("MODEL_CONTEXT_LENGTH", _default_context)
-MODEL_MAX_OUTPUT_TOKENS = _optional_int_env(
-    "MODEL_MAX_OUTPUT_TOKENS", _default_max_output
-)
 
 __all__: tuple[str, ...] = (
-    "GLOSSARY_FILE",
     "INPUT_FILE",
-    "MAX_TOKEN_LENGTH",
-    "MODEL_CONTEXT_LENGTH",
-    "MODEL_MAX_OUTPUT_TOKENS",
-    "OPENAI_MODEL",
     "OUTPUT_FILE",
-    "TEMPERATURE",
-    "TRANSLATION_MAX_RETRIES",
-    "TRANSLATION_MAX_WORKERS",
-    "TRANSLATION_RETRY_BACKOFF_SECONDS",
 )
