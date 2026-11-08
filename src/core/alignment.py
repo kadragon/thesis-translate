@@ -199,3 +199,11 @@ def find_term_violations(
             if pattern.search(src) and entry["translation"] not in dst
         )
     return found
+
+
+def interleave(source: list[str], translation: list[str]) -> list[list[str]]:
+    """Group aligned blocks: ``[marker]`` for page markers, else ``[src, dst]``."""
+    return [
+        [src] if _PAGE_MARKER.match(src) else [src, dst]
+        for src, dst in zip(source, translation, strict=True)
+    ]

@@ -149,6 +149,24 @@ def test_verify_fails_on_malformed_terms_file(tmp_path):
     assert main(["verify", src, dst, "--glossary", gloss]) == 1
 
 
+def test_dual_writes_interleaved_file_named_after_source(tmp_path):
+    src = _write(tmp_path / "paper_en.txt", "  p.1\n\n  A.\n\n  B.\n\n")
+    dst = _write(tmp_path / "paper_ko.txt", "  p.1\n\n  가.\n\n  나.\n\n")
+
+    assert main(["dual", src, dst]) == 0
+    assert (tmp_path / "paper_dual.txt").read_text(encoding="utf-8") == (
+        "  p.1\n\n  A.\n  가.\n\n  B.\n  나.\n\n"
+    )
+
+
+def test_dual_refuses_misaligned_files(tmp_path):
+    src = _write(tmp_path / "paper_en.txt", "  p.1\n\n  A.\n\n  B.\n\n")
+    dst = _write(tmp_path / "paper_ko.txt", "  p.1\n\n  가.\n\n")
+
+    assert main(["dual", src, dst]) == 1
+    assert not (tmp_path / "paper_dual.txt").exists()
+
+
 def test_format_indents_output_file(tmp_path):
     dst = tmp_path / "dst.txt"
     dst.write_text("p.1\n\n가.\n", encoding="utf-8")

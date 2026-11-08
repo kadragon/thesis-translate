@@ -13,6 +13,7 @@ from src.core.alignment import (
     find_number_mismatches,
     find_term_violations,
     find_untranslated,
+    interleave,
     load_terms,
     read_blocks,
 )
@@ -26,6 +27,8 @@ from src.utils.output_formatter import OutputFormatter
 from src.utils.rich_logging import configure_logging
 
 logger = logging.getLogger(__name__)
+
+_INDENT = "  "
 
 
 def _sibling(source: str, suffix: str) -> Path:
@@ -96,6 +99,26 @@ def _verify(args: argparse.Namespace) -> int:
     return 0
 
 
+def _dual(args: argparse.Namespace) -> int:
+    source = read_blocks(args.source)
+    translation = read_blocks(args.translation)
+    problems = find_misalignments(source, translation)
+    if problems:
+        for problem in problems:
+            logger.error(problem)
+        return 1
+    output = Path(args.output) if args.output else _sibling(args.source, "_dual.txt")
+    output.write_text(
+        "".join(
+            "".join(f"{_INDENT}{line}\n" for line in group) + "\n"
+            for group in interleave(source, translation)
+        ),
+        encoding="utf-8",
+    )
+    logger.info("원문 병기본을 %s에 저장했습니다.", output)
+    return 0
+
+
 def _format(args: argparse.Namespace) -> int:
     OutputFormatter.format_output(args.file)
     return 0
@@ -129,6 +152,12 @@ def _parser() -> argparse.ArgumentParser:
         help="용어 파일(반복 가능). 기본값: glossary.json, <PDF 이름>_terms.json",
     )
     verify.set_defaults(handler=_verify)
+
+    dual = sub.add_parser("dual", help="원문·번역문 병기본 만들기")
+    dual.add_argument("source")
+    dual.add_argument("translation")
+    dual.add_argument("-o", "--output", help="기본값: <PDF 이름>_dual.txt")
+    dual.set_defaults(handler=_dual)
 
     fmt = sub.add_parser("format", help="번역 파일 들여쓰기 정리")
     fmt.add_argument("file")

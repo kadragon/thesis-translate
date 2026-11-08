@@ -9,6 +9,7 @@ from src.core.alignment import (
     find_number_mismatches,
     find_term_violations,
     find_untranslated,
+    interleave,
     load_terms,
     read_blocks,
 )
@@ -162,3 +163,15 @@ def test_load_terms_rejects_malformed_entries(tmp_path):
 
     with pytest.raises(ValueError, match=r"terms\.json"):
         load_terms([bad])
+
+
+def test_interleave_pairs_source_and_translation_under_page_markers():
+    source = ["Title", "p.1", "A.", "B."]
+    translation = ["제목", "p.1", "가.", "나."]
+
+    assert interleave(source, translation) == [
+        ["Title", "제목"],
+        ["p.1"],
+        ["A.", "가."],
+        ["B.", "나."],
+    ]
