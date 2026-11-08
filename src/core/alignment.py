@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 _PAGE_MARKER = re.compile(r"^p\.\d+$")
 _PREAMBLE = "(before first page marker)"
@@ -53,18 +57,36 @@ def find_misalignments(source: list[str], translation: list[str]) -> list[str]:
     ]
 
 
-def find_untranslated(translation: list[str]) -> list[str]:
-    """Return ``"<page> #<n>: <text>"`` for paragraphs containing no Hangul."""
-    found: list[str] = []
+def _labeled(blocks: list[str]) -> Iterator[tuple[str, int, str]]:
+    """Yield ``(page label, paragraph number, block)`` for non-marker blocks."""
     label, index = _PREAMBLE, 0
-    for block in translation:
+    for block in blocks:
         if _PAGE_MARKER.match(block):
             label, index = block, 0
             continue
         index += 1
-        if not _HANGUL.search(block):
-            found.append(f"{label} #{index}: {block[:60]}")
-    return found
+        yield label, index, block
+
+
+def _labeled_pairs(
+    source: list[str], translation: list[str]
+) -> Iterator[tuple[str, int, str, str]]:
+    """Yield ``(label, number, source, translation)``; assumes aligned lists."""
+    for (label, index, src), dst in zip(
+        _labeled(source),
+        (block for block in translation if not _PAGE_MARKER.match(block)),
+        strict=False,
+    ):
+        yield label, index, src, dst
+
+
+def find_untranslated(translation: list[str]) -> list[str]:
+    """Return ``"<page> #<n>: <text>"`` for paragraphs containing no Hangul."""
+    return [
+        f"{label} #{index}: {block[:60]}"
+        for label, index, block in _labeled(translation)
+        if not _HANGUL.search(block)
+    ]
 
 
 def find_length_outliers(source: list[str], translation: list[str]) -> list[str]:
@@ -73,12 +95,7 @@ def find_length_outliers(source: list[str], translation: list[str]) -> list[str]
     Assumes the two block lists are already aligned.
     """
     found: list[str] = []
-    label, index = _PREAMBLE, 0
-    for src, dst in zip(source, translation, strict=False):
-        if _PAGE_MARKER.match(src):
-            label, index = src, 0
-            continue
-        index += 1
+    for label, index, src, dst in _labeled_pairs(source, translation):
         if len(src) < _MIN_SOURCE_CHARS:
             continue
         ratio = len(dst) / len(src)
