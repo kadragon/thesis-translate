@@ -162,6 +162,8 @@ cython_debug/
 
 *.txt
 glossary.json
+*_terms.json
+*_review.md
 
 # Translation state files
 .translation_state*.json

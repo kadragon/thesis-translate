@@ -136,7 +136,8 @@ overrides both; repeatable).
 - `그림·표 참조`: `Figure N` / `Table N` without `그림 N` / `표 N` — fix it.
 - `용어 불일치`: a term-table term is in the source but its rendering is not in
   the translation. Fix it, unless the term is part of a proper name kept in
-  English (e.g. `Deep Generative Replay`).
+  English (e.g. `Deep Generative Replay`). Hits on the source line are expected:
+  it keeps the English title and publisher name.
 
 ## 6. Review accuracy → `<stem>_review.md`
 
