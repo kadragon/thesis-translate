@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import subprocess
 from pathlib import Path
+from xml.etree.ElementTree import ParseError
 
 from src.core.alignment import (
     find_figure_ref_mismatches,
@@ -49,7 +51,13 @@ def _extract(args: argparse.Namespace) -> int:
         return 1
     try:
         raw = extract_pdf_text(args.pdf, first_pdf_page=args.first_pdf_page)
-    except (FileNotFoundError, RuntimeError, OSError) as exc:
+    except (
+        FileNotFoundError,
+        RuntimeError,
+        OSError,
+        subprocess.CalledProcessError,
+        ParseError,
+    ) as exc:
         logger.error("PDF 추출 실패: %s", exc)  # noqa: TRY400
         return 1
     pages = split_pages(raw)

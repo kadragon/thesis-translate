@@ -316,3 +316,32 @@ def test_layout_splits_centered_heading_from_indented_paragraph():
         "II. CENTERED SECTION HEADING\n\n"
         "This section reviews\nthe formulation and\nmethods.\f"
     )
+
+
+def test_extract_pdf_text_decodes_output_as_utf8(tmp_path):
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF")
+    completed = subprocess.CompletedProcess([], 0, stdout="", stderr="")
+
+    with patch("src.core.pdf_extractor.subprocess.run", return_value=completed) as run:
+        extract_pdf_text(str(pdf))
+
+    assert run.call_args.kwargs["encoding"] == "utf-8"
+
+
+def test_layout_keeps_indented_block_quote_lines_together():
+    block = _block(
+        _line(49, 300, 10, "Prior work has long"),
+        _line(49, 300, 22, "argued the same, and"),
+        _line(49, 300, 34, "as the authors note:"),
+        _line(79, 270, 46, "Learning is a lifelong"),
+        _line(79, 270, 58, "Process that never ends"),
+        _line(79, 200, 70, "In any domain."),
+        _line(49, 300, 82, "We follow that view"),
+        _line(49, 300, 94, "throughout the paper"),
+        _line(49, 300, 106, "and its experiments."),
+    )
+
+    assert layout_to_text(_doc(_page(_flow(block)))).split("\n\n")[1] == (
+        "Learning is a lifelong\nProcess that never ends\nIn any domain."
+    )

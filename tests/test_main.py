@@ -1,8 +1,12 @@
 """Tests for the thesis-translate CLI."""
 
+import logging
+import subprocess
 from unittest.mock import patch
+from xml.etree.ElementTree import ParseError
 
 from src.main import main
+from src.utils.rich_logging import configure_logging, get_console
 
 
 def test_extract_names_input_after_pdf(tmp_path, monkeypatch):
@@ -173,3 +177,25 @@ def test_format_indents_output_file(tmp_path):
 
     assert main(["format", str(dst)]) == 0
     assert dst.read_text(encoding="utf-8") == "  p.1\n\n  가.\n"
+
+
+def test_extract_reports_pdftotext_failure_without_traceback(tmp_path):
+    out = tmp_path / "in.txt"
+    error = subprocess.CalledProcessError(1, ["pdftotext"])
+    with patch("src.main.extract_pdf_text", side_effect=error):
+        assert main(["extract", "paper.pdf", "-o", str(out)]) == 1
+
+
+def test_extract_reports_malformed_layout_without_traceback(tmp_path):
+    out = tmp_path / "in.txt"
+    with patch("src.main.extract_pdf_text", side_effect=ParseError("bad")):
+        assert main(["extract", "paper.pdf", "-o", str(out)]) == 1
+
+
+def test_configure_logging_prints_brackets_literally():
+    configure_logging()
+    console = get_console()
+    with console.capture() as capture:
+        logging.getLogger("t").error("source [p.1, p.2], we use [i] and [b]")
+
+    assert "[p.1, p.2], we use [i] and [b]" in capture.get()

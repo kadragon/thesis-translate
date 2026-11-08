@@ -48,6 +48,7 @@ def extract_pdf_text(pdf_path: str, first_pdf_page: int = 1) -> str:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=True,
         )
     except FileNotFoundError as exc:
@@ -110,9 +111,12 @@ def _split_block(lines: list[_Line]) -> list[list[_Line]]:
         prev_centered = (
             prev.x0 > margin + _INDENT_PT and prev.x1 < right - _JUSTIFIED_SLACK_PT
         )
+        # Lines sharing one indent (a block quote) wrap; they start no paragraph.
+        same_indent = abs(line.x0 - prev.x0) <= _INDENT_PT
         # Indent after a finished sentence or after a heading-like line.
         indented = line.x0 > margin + _INDENT_PT and (
-            _ends_sentence(prev.text) or prev_short or prev_centered
+            _ends_sentence(prev.text)
+            or ((prev_short or prev_centered) and not same_indent)
         )
         hanging = line.x0 < prev.x0 - _INDENT_PT and len(current) >= 2  # noqa: PLR2004
         short_end = justified and prev_short and _ends_sentence(prev.text)

@@ -17,7 +17,8 @@ _HANGUL = re.compile(r"[\uac00-\ud7a3]")
 # Korean runs ~0.5-0.6x the English character count; far below hints at omission.
 _MIN_RATIO = 0.3
 _MIN_SOURCE_CHARS = 150
-_NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+# Thousands-grouped numbers stay whole; other commas (citation lists) split.
+_NUMBER = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?(?!\d)|\d+(?:\.\d+)?")
 # (source pattern, Korean label) for figure/table references.
 _FIGURE_REFS = (
     (re.compile(r"\b(?:Fig(?:ure)?s?|FIG(?:URE)?S?)\.?\s*(\d+)"), "그림"),
@@ -188,7 +189,11 @@ def find_term_violations(
     """
     patterns = [
         (
-            re.compile(rf"\b{re.escape(entry['term'])}(?:s|es)?\b", re.IGNORECASE),
+            re.compile(
+                rf"\b{re.escape(entry['term'])}(?:s|es)?\b",
+                # All-caps acronyms (IT, US) would otherwise match common words.
+                0 if entry["term"].isupper() else re.IGNORECASE,
+            ),
             entry,
         )
         for entry in terms

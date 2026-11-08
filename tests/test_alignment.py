@@ -200,3 +200,20 @@ def test_interleave_pairs_source_and_translation_under_page_markers():
         ["A.", "가."],
         ["B.", "나."],
     ]
+
+
+def test_find_number_mismatches_accepts_spaced_citation_list():
+    source = ["p.1", "Prior work [1,2] and [3,10,25] agrees."]
+    translation = ["p.1", "선행 연구[1, 2]와 [3, 10, 25]는 일치한다."]
+
+    assert find_number_mismatches(source, translation) == []
+
+
+def test_find_term_violations_matches_uppercase_acronym_case_sensitively():
+    terms = [{"term": "IT", "translation": "정보기술"}]
+    source = ["p.1", "It works and its cost is low.", "IT budgets grew."]
+    translation = ["p.1", "작동하며 비용이 낮다.", "예산이 늘었다."]
+
+    assert find_term_violations(source, translation, terms) == [
+        "p.1 #2: IT → 정보기술 없음: IT budgets grew."
+    ]
