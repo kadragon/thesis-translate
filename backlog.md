@@ -8,5 +8,4 @@
 
 ## Telegram bot (design: docs/architecture.md → Telegram Bot)
 
-- [ ] [feat] Result gate: run `verify`; on exit 0 send `<stem>_ko.txt` via `sendDocument`, else send the failure summary
 - [ ] [chore] Container image (poppler, uv, claude CLI, kr-style plugin) and deployment steps in `docs/runbook.md`

@@ -60,9 +60,10 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
   `--force`.
 - **Content check**: after download the file must carry `%PDF-` in its first 1024 bytes;
   otherwise it is deleted and the user told.
-- **Result gate**: run `uv run thesis-translate verify` from the bot after Claude exits; deliver
-  `_ko.txt` only on exit 0, otherwise send the failure summary (golden principle 5). Bot
-  uploads cap at 50 MB.
+- **Result gate** (`ClaudeRunner._deliver`): after Claude exits 0, require `<stem>_ko.txt`,
+  run `python -m src.main verify` in the workdir, and only on exit 0 upload it with
+  `sendDocument` (multipart, 50 MB cap), then send Claude's final report. Any failure sends a
+  Korean reason and no document (golden principle 5).
 - **Scans**: `extract` refuses image-only PDFs; relay that message — OCR is out of scope.
 
 Client library: none — `src/bot/telegram_api.py` calls the Bot API with stdlib `urllib`

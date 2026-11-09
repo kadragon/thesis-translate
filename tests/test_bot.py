@@ -244,3 +244,25 @@ def test_client_download_file_writes_bytes(tmp_path):
     assert dest.read_bytes() == b"%PDF-1.7 body"
     request = urlopen.call_args.args[0]
     assert request.full_url == "https://api.telegram.org/file/bott0k/documents/a.pdf"
+
+
+def test_client_send_document_uploads_multipart(tmp_path):
+    ko = tmp_path / "논문_ko.txt"
+    ko.write_text("  번역문\n", encoding="utf-8")
+
+    with patch(
+        "src.bot.telegram_api.urlopen",
+        return_value=_response({"ok": True, "result": {}}),
+    ) as urlopen:
+        TelegramClient("t0k").send_document(OWNER, ko, "번역본")
+
+    request = urlopen.call_args.args[0]
+    assert request.full_url.endswith("/sendDocument")
+    assert request.get_header("Content-type").startswith(
+        "multipart/form-data; boundary="
+    )
+    body = request.data
+    assert "  번역문\n".encode() in body
+    assert 'filename="논문_ko.txt"'.encode() in body
+    assert b'name="chat_id"\r\n\r\n111\r\n' in body
+    assert "번역본".encode() in body

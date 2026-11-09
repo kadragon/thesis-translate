@@ -24,7 +24,8 @@
    `CLAUDE_CODE_OAUTH_TOKEN` live in `.env` (gitignored) or the host's secret store, never in
    code, logs, or Telegram replies. Enforced: `.gitignore`, `.claude/settings.json` deny.
 5. **One source block → one translated block, `p.N` lines untouched.** Enforced:
-   `thesis-translate verify` (exit 1 on mismatch); the bot must not deliver a failing result.
+   `thesis-translate verify` (exit 1 on mismatch); the bot sends `_ko.txt` only after verify
+   passes (`tests/test_bot_runner.py::test_failed_verify_sends_no_document`).
 
 ## Working with Existing Code
 
@@ -57,6 +58,8 @@ Updates (newest first, keep ~5).
 
 ## Updates
 
+- 2026-11-09: Bot result gate: `verify` must pass before `<stem>_ko.txt` goes out via
+  `sendDocument` (50 MB cap), followed by Claude's report; failures go to the chat.
 - 2026-11-09: Bot job runner `src/bot/runner.py`: `claude -p --permission-mode dontAsk` with a
   tool allowlist, prompt on stdin, 4 h timeout, failures reported to the chat.
 - 2026-11-09: Bot intake: PDF download to `inbox/` (non-PDF, >20 MB, bad header rejected),

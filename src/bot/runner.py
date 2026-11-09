@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import subprocess
+import sys
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
@@ -39,6 +40,9 @@ ALLOWED_TOOLS = (
 )
 DISALLOWED_TOOLS = ("WebFetch", "WebSearch")
 JOB_TIMEOUT_SECONDS = 4 * 60 * 60
+VERIFY_TIMEOUT_SECONDS = 5 * 60
+# Bot API sendDocument refuses files above 50 MB.
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 # Telegram rejects messages over 4096 characters.
 MAX_MESSAGE_CHARS = 4000
 _SECRET_ENV_PREFIX = "TELEGRAM_"
@@ -49,6 +53,8 @@ FAILED = "{name}을(를) 번역하지 못했습니다.\n\n{reason}"
 
 class Notifier(Protocol):
     def send_message(self, chat_id: int, text: str) -> None: ...
+
+    def send_document(self, chat_id: int, path: Path, caption: str) -> None: ...
 
 
 def build_prompt(job: Job) -> str:
@@ -167,4 +173,42 @@ class ClaudeRunner:
         return report
 
     def _deliver(self, job: Job, report: str) -> None:
-        self._notifier.send_message(job.chat_id, _clip(report))
+        """Send ``<stem>_ko.txt`` only if ``verify`` passes (golden principle 5)."""
+        source, target = f"{job.stem}_en.txt", f"{job.stem}_ko.txt"
+        translation = self._workdir / target
+        if not translation.exists():
+            self._fail(job, f"번역 파일이 만들어지지 않았습니다.\n\n{report}")
+            return
+        try:
+            verify = self._run(
+                [sys.executable, "-m", "src.main", "verify", source, target],
+                cwd=self._workdir,
+                capture_output=True,
+                text=True,
+                timeout=VERIFY_TIMEOUT_SECONDS,
+                env={**_child_env(self._env), "COLUMNS": "200"},
+                check=False,
+            )
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            self._fail(job, f"구조 검증(verify)을 실행하지 못했습니다: {exc}")
+            return
+        if verify.returncode != 0:
+            output = (verify.stdout or "") + (verify.stderr or "")
+            self._fail(
+                job,
+                "구조 검증(verify)에 실패해 번역본을 보내지 않습니다.\n\n"
+                + _clip(output, 3000),
+            )
+            return
+        if translation.stat().st_size > MAX_UPLOAD_BYTES:
+            self._fail(
+                job,
+                f"번역본이 50 MB를 넘어 Telegram으로 보낼 수 없습니다. "
+                f"서버의 {target}을(를) 확인하세요.",
+            )
+            return
+        self._notifier.send_document(
+            job.chat_id, translation, f"{job.file_name} 번역본"
+        )
+        if report.strip():
+            self._notifier.send_message(job.chat_id, _clip(report))

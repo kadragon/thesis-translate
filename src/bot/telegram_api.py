@@ -6,6 +6,7 @@ import json
 import shutil
 from typing import TYPE_CHECKING, Any
 from urllib.request import Request, urlopen
+from uuid import uuid4
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -26,10 +27,15 @@ class TelegramClient:
         return "TelegramClient(token=***)"
 
     def _call(self, method: str, payload: dict[str, Any], timeout: float) -> Any:
+        return self._post(
+            method, json.dumps(payload).encode(), "application/json", timeout
+        )
+
+    def _post(self, method: str, data: bytes, content_type: str, timeout: float) -> Any:
         request = Request(
             f"{_API}/bot{self._token}/{method}",
-            data=json.dumps(payload).encode(),
-            headers={"Content-Type": "application/json"},
+            data=data,
+            headers={"Content-Type": content_type},
         )
         with urlopen(request, timeout=timeout) as response:
             body = json.loads(response.read())
@@ -64,3 +70,26 @@ class TelegramClient:
             dest.open("wb") as out,
         ):
             shutil.copyfileobj(response, out)
+
+    def send_document(self, chat_id: int, path: Path, caption: str) -> None:
+        boundary = uuid4().hex
+        fields = {"chat_id": str(chat_id), "caption": caption}
+        parts = [
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"'
+            f"\r\n\r\n{value}\r\n".encode()
+            for name, value in fields.items()
+        ]
+        filename = path.name.replace('"', "_")
+        parts.append(
+            f"--{boundary}\r\nContent-Disposition: form-data; "
+            f'name="document"; filename="{filename}"\r\n'
+            "Content-Type: text/plain; charset=utf-8\r\n\r\n".encode()
+            + path.read_bytes()
+            + f"\r\n--{boundary}--\r\n".encode()
+        )
+        self._post(
+            "sendDocument",
+            b"".join(parts),
+            f"multipart/form-data; boundary={boundary}",
+            _DOWNLOAD_TIMEOUT_SECONDS,
+        )

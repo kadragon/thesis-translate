@@ -195,3 +195,78 @@ def test_long_failure_text_is_truncated_to_telegram_limit(tmp_path):
     runner(JOB)
 
     assert len(notifier.messages[-1][1]) <= 4096  # noqa: PLR2004 - Telegram limit
+
+
+# --- result gate: golden principle 5 ----------------------------------------
+
+
+def _verify(code, output=""):
+    return subprocess.CompletedProcess([], code, stdout=output, stderr="")
+
+
+def _write_outputs(tmp_path, stem="Lacy 2022"):
+    (tmp_path / f"{stem}_en.txt").write_text("  p.1\n\n  Body.\n", encoding="utf-8")
+    ko = tmp_path / f"{stem}_ko.txt"
+    ko.write_text("  p.1\n\n  본문.\n", encoding="utf-8")
+    return ko
+
+
+def test_verified_translation_is_sent_as_document_then_report(tmp_path):
+    ko = _write_outputs(tmp_path)
+    run = FakeRun(_claude_ok("보고: 10쪽"), _verify(0))
+    runner, notifier = _runner(tmp_path, run)
+
+    runner(JOB)
+
+    argv, kwargs = run.calls[1]
+    assert argv[-3:] == ["verify", "Lacy 2022_en.txt", "Lacy 2022_ko.txt"]
+    assert kwargs["cwd"] == tmp_path
+    assert notifier.documents == [(OWNER, ko, "Lacy 2022.pdf 번역본")]
+    assert notifier.messages[-1] == (OWNER, "보고: 10쪽")
+
+
+def test_failed_verify_sends_no_document(tmp_path):
+    _write_outputs(tmp_path)
+    run = FakeRun(_claude_ok(), _verify(1, "p.3: 문단 수 4 != 5\n"))
+    runner, notifier = _runner(tmp_path, run)
+
+    runner(JOB)
+
+    assert notifier.documents == []
+    last = notifier.messages[-1][1]
+    assert "검증" in last
+    assert "p.3: 문단 수 4 != 5" in last
+
+
+def test_missing_translation_file_is_reported_with_claude_report(tmp_path):
+    run = FakeRun(_claude_ok("스캔본이라 중단했습니다."))
+    runner, notifier = _runner(tmp_path, run)
+
+    runner(JOB)
+
+    assert len(run.calls) == 1
+    assert notifier.documents == []
+    assert "스캔본이라 중단했습니다." in notifier.messages[-1][1]
+
+
+def test_oversized_translation_is_not_uploaded(tmp_path, monkeypatch):
+    _write_outputs(tmp_path)
+    monkeypatch.setattr("src.bot.runner.MAX_UPLOAD_BYTES", 1)
+    run = FakeRun(_claude_ok(), _verify(0))
+    runner, notifier = _runner(tmp_path, run)
+
+    runner(JOB)
+
+    assert notifier.documents == []
+    assert "50 MB" in notifier.messages[-1][1]
+
+
+def test_verify_that_cannot_run_is_reported(tmp_path):
+    _write_outputs(tmp_path)
+    run = FakeRun(_claude_ok(), subprocess.TimeoutExpired(["verify"], 300))
+    runner, notifier = _runner(tmp_path, run)
+
+    runner(JOB)
+
+    assert notifier.documents == []
+    assert "verify" in notifier.messages[-1][1]
