@@ -1,7 +1,9 @@
 """Tests for the headless ``claude -p`` job runner."""
 
+import contextlib
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -22,6 +24,7 @@ from src.bot.runner import (
 from src.bot.workspace import Isolation, JobSpace
 
 OWNER = 111
+TIMEOUT_BOUND_SECONDS = 10
 JOB = Job("j1", OWNER, "Lacy 2022.pdf", "Lacy 2022", Path("inbox/Lacy 2022.pdf"))
 
 
@@ -424,6 +427,25 @@ def test_run_in_group_kills_grandchildren_on_timeout(tmp_path):
         time.sleep(0.05)
     else:
         pytest.fail("grandchild still alive")
+
+
+def test_run_in_group_timeout_not_blocked_by_setsid_descendant(tmp_path):
+    # The descendant leaves the process group but keeps stdout/stderr open.
+    pid_file = tmp_path / "pid"
+    child = (
+        "import os, time; os.setsid(); "
+        f"open({str(pid_file)!r}, 'w').write(str(os.getpid())); time.sleep(30)"
+    )
+    script = f'{sys.executable} -c "{child}" & sleep 30'
+
+    started = time.monotonic()
+    try:
+        with pytest.raises(subprocess.TimeoutExpired):
+            run_in_group(["sh", "-c", script], input="", timeout=1)
+        assert time.monotonic() - started < TIMEOUT_BOUND_SECONDS
+    finally:
+        with contextlib.suppress(FileNotFoundError, ValueError, ProcessLookupError):
+            os.kill(int(pid_file.read_text()), signal.SIGKILL)
 
 
 def test_run_in_group_returns_output_and_code():

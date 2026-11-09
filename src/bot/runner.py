@@ -195,7 +195,13 @@ def run_in_group(  # noqa: PLR0913 - mirrors subprocess.run
         stdout, stderr = proc.communicate(input, timeout=timeout)
     except subprocess.TimeoutExpired:
         _kill_group(proc.pid)
-        proc.communicate()
+        # A setsid'd descendant can still hold the pipes; draining them again
+        # would block the worker until it exits. The output is discarded anyway.
+        for pipe in (proc.stdin, proc.stdout, proc.stderr):
+            if pipe is not None:
+                with contextlib.suppress(OSError):
+                    pipe.close()
+        proc.wait()
         _reap(-proc.pid)
         raise
     _kill_group(proc.pid)

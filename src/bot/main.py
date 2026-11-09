@@ -60,9 +60,17 @@ def disable_dumpable(
 
 
 def build_isolation(
-    workdir: Path, *, euid: int | None = None, jobs_dir: Path = JOBS_DIR
+    workdir: Path,
+    *,
+    euid: int | None = None,
+    jobs_dir: Path = JOBS_DIR,
+    home_template: Path = HOME_TEMPLATE,
 ) -> Isolation | None:
-    """Per-job isolation when running as root (the container); else ``None``."""
+    """Per-job isolation when running as root (the container); else ``None``.
+
+    Raises ``FileNotFoundError`` when the image lacks the HOME template: every
+    job would otherwise run without the prod plugin (no kr-style step).
+    """
     euid = os.geteuid() if euid is None else euid
     if euid != 0:
         logger.warning(
@@ -70,11 +78,14 @@ def build_isolation(
             "작업 디렉터리를 공유합니다."
         )
         return None
+    if not (home_template / ".claude").is_dir():
+        msg = f"HOME template missing: {home_template / '.claude'}"
+        raise FileNotFoundError(msg)
     isolation = Isolation(
         app_dir=workdir,
         jobs_dir=jobs_dir,
         outputs_dir=workdir / "outputs",
-        home_template=HOME_TEMPLATE,
+        home_template=home_template,
     )
     isolation.reset()
     return isolation
@@ -117,7 +128,12 @@ def main(env: Mapping[str, str] | None = None) -> int:
     except OSError as exc:
         logger.error("프로세스 보호(prctl) 설정 실패로 시작하지 않습니다: %s", exc)  # noqa: TRY400
         return 1
-    _serve(config)  # pragma: no cover - network loop
+    try:
+        isolation = build_isolation(Path.cwd())
+    except FileNotFoundError as exc:
+        logger.error("작업 격리를 준비하지 못해 시작하지 않습니다: %s", exc)  # noqa: TRY400
+        return 1
+    _serve(config, isolation)  # pragma: no cover - network loop
     return 0  # pragma: no cover
 
 
@@ -125,11 +141,12 @@ def _raise_keyboard_interrupt(*_: object) -> None:  # pragma: no cover
     raise KeyboardInterrupt
 
 
-def _serve(config: BotConfig) -> None:  # pragma: no cover - network loop
+def _serve(  # pragma: no cover - network loop
+    config: BotConfig, isolation: Isolation | None
+) -> None:
     """Wire client, queue, runner, and intake; poll until Ctrl+C."""
     client = TelegramClient(config.token)
     workdir = Path.cwd()
-    isolation = build_isolation(workdir)
     queue = JobQueue(runner=ClaudeRunner(client, workdir=workdir, isolation=isolation))
     intake = Intake(
         client,

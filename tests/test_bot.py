@@ -349,8 +349,35 @@ def test_isolation_is_built_and_reset_when_root(tmp_path):
     jobs = tmp_path / "jobs"
     (jobs / "stale").mkdir(parents=True)
 
-    iso = build_isolation(tmp_path, euid=0, jobs_dir=jobs)
+    template = tmp_path / "claude-home"
+    (template / ".claude").mkdir(parents=True)
+
+    iso = build_isolation(tmp_path, euid=0, jobs_dir=jobs, home_template=template)
 
     assert iso is not None
+    assert iso.home_template == template
     assert iso.outputs_dir == tmp_path / "outputs"
     assert list(jobs.iterdir()) == []
+
+
+def test_isolation_refuses_missing_home_template(tmp_path):
+    # A broken image would otherwise run every job without the prod plugin.
+    with pytest.raises(FileNotFoundError, match="claude-home"):
+        build_isolation(
+            tmp_path,
+            euid=0,
+            jobs_dir=tmp_path / "jobs",
+            home_template=tmp_path / "claude-home",
+        )
+
+
+def test_main_exits_1_when_isolation_cannot_start():
+    env = {"TELEGRAM_BOT_TOKEN": "t0k", "TELEGRAM_ALLOWED_CHAT_IDS": "111"}
+
+    with (
+        patch("src.bot.main.disable_dumpable", return_value=False),
+        patch("src.bot.main.build_isolation", side_effect=FileNotFoundError),
+        patch("src.bot.main._serve") as serve,
+    ):
+        assert bot_main(env) == 1
+    serve.assert_not_called()
