@@ -18,6 +18,7 @@ from src.bot.intake import Intake
 from src.bot.jobs import JobQueue
 from src.bot.runner import ClaudeRunner
 from src.bot.telegram_api import TelegramClient
+from src.bot.workspace import Isolation
 from src.utils.rich_logging import configure_logging
 
 if TYPE_CHECKING:
@@ -30,6 +31,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 POLL_TIMEOUT_SECONDS = 30
+JOBS_DIR = Path("/jobs")
+# Root-owned ~/.claude template (settings, plugins) built into the image.
+HOME_TEMPLATE = Path("/opt/claude-home")
 RETRY_DELAY_SECONDS = 5
 PR_SET_DUMPABLE = 4
 
@@ -53,6 +57,27 @@ def disable_dumpable(
         msg = f"prctl(PR_SET_DUMPABLE) failed: errno {ctypes.get_errno()}"
         raise OSError(msg)
     return True
+
+
+def build_isolation(
+    workdir: Path, *, euid: int | None = None, jobs_dir: Path = JOBS_DIR
+) -> Isolation | None:
+    """Per-job isolation when running as root (the container); else ``None``."""
+    euid = os.geteuid() if euid is None else euid
+    if euid != 0:
+        logger.warning(
+            "root가 아니어서 작업별 격리 없이 실행합니다. 작업들이 같은 사용자와 "
+            "작업 디렉터리를 공유합니다."
+        )
+        return None
+    isolation = Isolation(
+        app_dir=workdir,
+        jobs_dir=jobs_dir,
+        outputs_dir=workdir / "outputs",
+        home_template=HOME_TEMPLATE,
+    )
+    isolation.reset()
+    return isolation
 
 
 class Client(Protocol):
@@ -104,8 +129,15 @@ def _serve(config: BotConfig) -> None:  # pragma: no cover - network loop
     """Wire client, queue, runner, and intake; poll until Ctrl+C."""
     client = TelegramClient(config.token)
     workdir = Path.cwd()
-    queue = JobQueue(runner=ClaudeRunner(client, workdir=workdir))
-    intake = Intake(client, queue, inbox=workdir / "inbox", workdir=workdir)
+    isolation = build_isolation(workdir)
+    queue = JobQueue(runner=ClaudeRunner(client, workdir=workdir, isolation=isolation))
+    intake = Intake(
+        client,
+        queue,
+        inbox=workdir / "inbox",
+        workdir=workdir,
+        outputs=isolation.outputs_dir if isolation else None,
+    )
     queue.start()
     # As PID 1 the default SIGTERM action is ignored; stop cleanly on docker stop.
     signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)

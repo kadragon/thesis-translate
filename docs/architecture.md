@@ -69,6 +69,16 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
   message naming the server-side file.
   Timeout 4 h. The log line counts `permission_denials`: a non-zero count means the allowlist
   blocked a skill step.
+- **Isolation (root mode, `src/bot/workspace.py`)**: when the bot runs as root,
+  `build_isolation` gives each job a never-reused UID (from 20000) and
+  `/jobs/<id>/{work,home,tmp}`: `work` holds symlinks to the read-only checkout entries the
+  skill needs plus a copy of the PDF; `home` is seeded from `/opt/claude-home/.claude`. Claude
+  and `verify` run as that UID (`extra_groups=[]`). After Claude exits the UID is swept, the
+  four `<stem>_*` outputs are copied (regular files only, `O_NOFOLLOW` via a dir fd) into
+  root-owned `outputs/<stem>/`, `verify` runs there, and `/jobs/<id>` plus the UID's files in
+  `/tmp`, `/var/tmp`, `/dev/shm` are deleted. Non-root runs keep the shared-CWD mode below and
+  warn at startup. Design: `docs/design/per-job-isolation.md`; the image switch is backlog
+  ticket 2.
 - **Stem**: `sanitize_stem` keeps the base name only, maps unsafe characters to `_`, strips
   leading `-`/`.` (no CLI flags), caps 120 chars. If `<stem>` is queued/running or
   `inbox/<stem>.pdf`, `<stem>_en.txt`, `<stem>_ko.txt` exists, append `_<job_id>` instead of

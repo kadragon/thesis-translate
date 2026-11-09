@@ -39,7 +39,9 @@ def _job(stem="paper", job_id="j1"):
     )
 
 
-def _intake(tmp_path, downloader=None, queue=None, ids=("j1", "j2", "j3")):
+def _intake(
+    tmp_path, downloader=None, queue=None, ids=("j1", "j2", "j3"), outputs=None
+):
     queue = queue or JobQueue(runner=lambda _job: None)
     id_iter = iter(ids)
     intake = Intake(
@@ -48,6 +50,7 @@ def _intake(tmp_path, downloader=None, queue=None, ids=("j1", "j2", "j3")):
         inbox=tmp_path / "inbox",
         workdir=tmp_path,
         new_id=lambda: next(id_iter),
+        outputs=outputs,
     )
     return intake, queue
 
@@ -224,3 +227,13 @@ def test_incomplete_read_is_a_download_failure(tmp_path):
 
     assert intake.accept(OWNER, _doc()) == DOWNLOAD_FAILED
     assert queue.pending() == []
+
+
+def test_existing_output_dir_gets_job_id_suffix(tmp_path):
+    outputs = tmp_path / "outputs"
+    (outputs / "Lacy 2022").mkdir(parents=True)
+    intake, queue = _intake(tmp_path, outputs=outputs)
+
+    intake.accept(OWNER, _doc())
+
+    assert queue.pending()[0].stem == "Lacy 2022_j1"

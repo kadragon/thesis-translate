@@ -19,6 +19,7 @@ from src.bot.runner import (
     kill_same_uid_strays,
     run_in_group,
 )
+from src.bot.workspace import Isolation, JobSpace
 
 OWNER = 111
 JOB = Job("j1", OWNER, "Lacy 2022.pdf", "Lacy 2022", Path("inbox/Lacy 2022.pdf"))
@@ -476,3 +477,208 @@ def test_runner_sweeps_strays_only_as_pid_1(tmp_path, monkeypatch):
     monkeypatch.setattr("src.bot.runner.os.getpid", lambda: 1)
     _runner(tmp_path, run)[0](JOB)
     assert swept == [True]
+
+
+# --- per-job isolation (root mode) -------------------------------------------
+
+
+class FakeIsolation(Isolation):
+    """Real directory layout under tmp_path; records workspaces and sweeps."""
+
+    def __init__(self, tmp_path):
+        app = tmp_path / "app"
+        (app / "inbox").mkdir(parents=True, exist_ok=True)
+        self.swept: list[int] = []
+        self.spaces: list[JobSpace] = []
+        super().__init__(
+            app_dir=app,
+            jobs_dir=tmp_path / "jobs",
+            outputs_dir=app / "outputs",
+            home_template=tmp_path / "no-template",
+            chown=lambda *_a, **_k: None,
+            kill_strays=self._record_sweep,
+            shared_tmp=(),
+        )
+
+    def _record_sweep(self, uid):
+        self.swept.append(uid)
+        return 0
+
+    def prepare(self, job):
+        space = super().prepare(job)
+        self.spaces.append(space)
+        return space
+
+
+def _iso_job(tmp_path):
+    pdf = tmp_path / "app" / "inbox" / "Lacy 2022.pdf"
+    pdf.parent.mkdir(parents=True, exist_ok=True)
+    pdf.write_bytes(b"%PDF-1.7\n")
+    return Job("j1", OWNER, "Lacy 2022.pdf", "Lacy 2022", pdf)
+
+
+class WritingRun(FakeRun):
+    """Like FakeRun, but the claude call leaves outputs in its cwd."""
+
+    def __call__(self, argv, **kwargs):
+        if argv[0] == "claude":
+            _write_outputs(kwargs["cwd"])
+        return super().__call__(argv, **kwargs)
+
+
+def _iso_runner(tmp_path, run):
+    iso = FakeIsolation(tmp_path)
+    notifier = FakeNotifier()
+    env = {"PATH": "/usr/bin", "HOME": "/root", "CLAUDE_CONFIG_DIR": "/root/.claude"}
+    runner = ClaudeRunner(notifier, workdir=tmp_path, run=run, env=env, isolation=iso)
+    return runner, notifier, iso
+
+
+def test_isolated_job_runs_as_job_uid_in_its_workspace(tmp_path):
+    run = WritingRun(_claude_ok(), _verify(0))
+    runner, _, iso = _iso_runner(tmp_path, run)
+    job = _iso_job(tmp_path)
+
+    runner(job)
+
+    space = iso.spaces[0]
+    argv, kwargs = run.calls[0]
+    assert argv == build_claude_argv()
+    assert kwargs["cwd"] == space.work
+    assert (kwargs["user"], kwargs["group"], kwargs["extra_groups"]) == (
+        space.uid,
+        space.uid,
+        [],
+    )
+    assert kwargs["env"]["HOME"] == str(space.home)
+    assert kwargs["env"]["TMPDIR"] == str(space.tmp)
+    assert kwargs["env"]["PATH"] == "/usr/bin"
+    assert "CLAUDE_CONFIG_DIR" not in kwargs["env"]
+    # The prompt names the PDF copy inside the job workdir, not the inbox.
+    assert "`Lacy 2022.pdf`" in kwargs["input"]
+    assert "inbox" not in kwargs["input"]
+
+
+def test_isolated_job_verifies_and_sends_the_copied_output(tmp_path):
+    run = WritingRun(_claude_ok("보고"), _verify(0))
+    runner, notifier, iso = _iso_runner(tmp_path, run)
+
+    runner(_iso_job(tmp_path))
+
+    space = iso.spaces[0]
+    out = tmp_path / "app" / "outputs" / "Lacy 2022"
+    argv, kwargs = run.calls[1]
+    assert argv[-3:] == ["verify", "Lacy 2022_en.txt", "Lacy 2022_ko.txt"]
+    assert kwargs["cwd"] == out
+    assert (kwargs["user"], kwargs["group"], kwargs["extra_groups"]) == (
+        space.uid,
+        space.uid,
+        [],
+    )
+    assert notifier.documents == [
+        (OWNER, out / "Lacy 2022_ko.txt", "Lacy 2022.pdf 번역본")
+    ]
+    assert notifier.messages[-1] == (OWNER, "보고")
+
+
+def test_isolated_failed_verify_sends_no_document(tmp_path):
+    run = WritingRun(_claude_ok(), _verify(1, "p.3: 문단 수 4 != 5\n"))
+    runner, notifier, _ = _iso_runner(tmp_path, run)
+
+    runner(_iso_job(tmp_path))
+
+    assert notifier.documents == []
+    assert "검증" in notifier.messages[-1][1]
+
+
+def test_isolated_workspace_is_discarded_after_success(tmp_path):
+    run = WritingRun(_claude_ok(), _verify(0))
+    runner, _, iso = _iso_runner(tmp_path, run)
+
+    runner(_iso_job(tmp_path))
+
+    space = iso.spaces[0]
+    assert not space.root.exists()
+    assert space.uid in iso.swept
+
+
+def test_isolated_workspace_is_discarded_after_failure(tmp_path):
+    payload = {"type": "result", "is_error": True, "result": "스캔본입니다."}
+    run = FakeRun(subprocess.CompletedProcess([], 1, stdout=json.dumps(payload)))
+    runner, notifier, iso = _iso_runner(tmp_path, run)
+
+    runner(_iso_job(tmp_path))
+
+    assert not iso.spaces[0].root.exists()
+    assert iso.spaces[0].uid in iso.swept
+    assert "스캔본입니다." in notifier.messages[-1][1]
+
+
+def test_isolated_workspace_is_discarded_after_timeout(tmp_path):
+    run = FakeRun(subprocess.TimeoutExpired("claude", JOB_TIMEOUT_SECONDS))
+    runner, _, iso = _iso_runner(tmp_path, run)
+
+    runner(_iso_job(tmp_path))
+
+    assert not iso.spaces[0].root.exists()
+    assert iso.spaces[0].uid in iso.swept
+
+
+def test_isolated_job_sweeps_uid_before_collecting_outputs(tmp_path):
+    order: list[str] = []
+    run = WritingRun(_claude_ok(), _verify(0))
+    runner, _, iso = _iso_runner(tmp_path, run)
+    collect = iso.collect
+
+    def sweep(_uid):
+        order.append("sweep")
+        return 0
+
+    def recording_collect(*args):
+        order.append("collect")
+        return collect(*args)
+
+    iso._kill_strays = sweep
+    iso.collect = recording_collect
+
+    runner(_iso_job(tmp_path))
+
+    assert order[:2] == ["sweep", "collect"]
+
+
+def test_shared_mode_runs_without_uid_switch(tmp_path):
+    run = FakeRun(_claude_ok())
+    runner, _ = _runner(tmp_path, run)
+
+    runner(JOB)
+
+    assert "user" not in run.calls[0][1]
+
+
+def test_failed_copy_out_is_reported_and_workspace_discarded(tmp_path):
+    run = WritingRun(_claude_ok())
+    runner, notifier, iso = _iso_runner(tmp_path, run)
+
+    def broken(*_a):
+        raise OSError(28, "No space left on device")
+
+    iso.collect = broken
+
+    runner(_iso_job(tmp_path))
+
+    assert notifier.documents == []
+    assert "No space left" in notifier.messages[-1][1]
+    assert not iso.spaces[0].root.exists()
+
+
+def test_kill_same_uid_strays_skips_zombies(tmp_path):
+    proc = _fake_proc(tmp_path, [(40, 10001)])
+    status = proc / "40" / "status"
+    status.write_text("Name:\tx\nState:\tZ (zombie)\n" + status.read_text())
+    killed: list[int] = []
+
+    count = kill_same_uid_strays(
+        proc_root=proc, self_pid=1, uid=10001, kill=lambda pid, _s: killed.append(pid)
+    )
+
+    assert (count, killed) == (0, [])

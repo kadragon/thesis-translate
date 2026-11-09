@@ -59,6 +59,9 @@ Updates (newest first, keep ~5).
 
 ## Updates
 
+- 2026-11-09: Bot runner has a root mode (`src/bot/workspace.py`): per-job UID and
+  `/jobs/<id>` workspace, outputs copied to root-owned `outputs/<stem>/`; the image still
+  runs as `bot` until backlog ticket 2 switches it.
 - 2026-11-09: `extract` keeps a line-end hyphen when the compound appears whole elsewhere in
   the paper or in `glossary.json`; `verify`/`extract` read `glossary.json` from the project
   root, not the CWD.

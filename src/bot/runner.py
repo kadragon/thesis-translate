@@ -7,6 +7,7 @@ Paper text is untrusted, so Claude runs with an explicit tool allowlist and
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import json
 import logging
 import os
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
     from src.bot.jobs import Job
+    from src.bot.workspace import Isolation, JobSpace
 
 logger = logging.getLogger(__name__)
 
@@ -158,24 +160,31 @@ def build_claude_argv() -> list[str]:
     ]
 
 
-def run_in_group(
+def run_in_group(  # noqa: PLR0913 - mirrors subprocess.run
     argv: list[str],
     *,
     input: str,  # noqa: A002 - mirrors subprocess.run
     timeout: float,
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
+    user: int | None = None,
+    group: int | None = None,
+    extra_groups: list[int] | None = None,
     **_: Any,
 ) -> subprocess.CompletedProcess[str]:
     """``subprocess.run`` in a new session; the whole group dies afterwards.
 
     Claude's tool subprocesses (python3, uv, pdftotext) share its process group,
     so a timeout or a finished run never leaves them writing into the workdir.
+    ``user``/``group``/``extra_groups`` drop privileges (per-job isolation).
     """
     proc = subprocess.Popen(
         argv,
         cwd=cwd,
         env=env,
+        user=user,
+        group=group,
+        extra_groups=extra_groups,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -234,9 +243,13 @@ def kill_same_uid_strays(
             status = (entry / "status").read_text()
         except OSError:
             continue
-        uid_line = next((x for x in status.splitlines() if x.startswith("Uid:")), "")
+        lines = status.splitlines()
+        uid_line = next((x for x in lines if x.startswith("Uid:")), "")
         if uid_line.split()[1:2] != [str(uid)]:
             continue
+        state = next((x for x in lines if x.startswith("State:")), "")
+        if state.split()[1:2] == ["Z"]:
+            continue  # already dead; only its parent can reap it
         try:
             kill(int(entry.name), signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
@@ -253,6 +266,15 @@ def _sweep_strays() -> None:
     if killed:
         logger.warning("작업 종료 후 남은 프로세스 %d개를 종료했습니다.", killed)
     _reap(-1)
+
+
+@dataclasses.dataclass(frozen=True)
+class _Place:
+    """Where a job's commands run, with which env, and as whom."""
+
+    cwd: Path
+    env: dict[str, str]
+    ids: dict[str, Any]
 
 
 def _child_env(env: Mapping[str, str]) -> dict[str, str]:
@@ -283,17 +305,59 @@ class ClaudeRunner:
         workdir: Path,
         run: Callable[..., subprocess.CompletedProcess[str]] = run_in_group,
         env: Mapping[str, str] | None = None,
+        isolation: Isolation | None = None,
     ) -> None:
         self._notifier = notifier
         self._workdir = workdir
         self._run = run
         self._env = os.environ if env is None else env
+        self._isolation = isolation
 
     def __call__(self, job: Job) -> None:
         self._send(job, START.format(name=job.file_name))
-        report = self._translate(job)
+        if self._isolation is not None:
+            self._run_isolated(job, self._isolation)
+            return
+        place = _Place(self._workdir, _child_env(self._env), {})
+        report = self._translate(job, place, _sweep_strays)
         if report is not None:
-            self._deliver(job, report)
+            self._deliver(job, report, place)
+
+    def _run_isolated(self, job: Job, isolation: Isolation) -> None:
+        """Root mode: a fresh UID and throwaway workspace for this job only."""
+        try:
+            space = isolation.prepare(job)
+        except (OSError, ValueError) as exc:
+            self._fail(job, f"작업 공간을 준비하지 못했습니다: {exc}")
+            return
+        try:
+            place = self._isolated_place(isolation, space)
+            # The prompt names the PDF copy in the job's own workdir.
+            local = dataclasses.replace(job, pdf_path=Path(f"{job.stem}.pdf"))
+
+            def sweep() -> None:
+                isolation.sweep(space)
+                if os.getpid() == 1:
+                    _reap(-1)
+
+            report = self._translate(local, place, sweep)
+            if report is None:
+                return
+            try:
+                outputs = isolation.collect(space, job.stem)
+            except OSError as exc:
+                self._fail(job, f"번역 결과를 보관하지 못했습니다: {exc}")
+                return
+            self._deliver(job, report, dataclasses.replace(place, cwd=outputs))
+        finally:
+            isolation.discard(space)
+
+    def _isolated_place(self, isolation: Isolation, space: JobSpace) -> _Place:
+        env = _child_env(self._env)
+        env.pop("CLAUDE_CONFIG_DIR", None)  # would point at the bot's own config
+        env.update(isolation.child_env(space))
+        ids = {"user": space.uid, "group": space.uid, "extra_groups": []}
+        return _Place(space.work, env, ids)
 
     def _redact(self, text: str) -> str:
         """Golden principle 4: no secret reaches Telegram, whatever was printed."""
@@ -315,18 +379,21 @@ class ClaudeRunner:
         logger.warning("작업 %s 실패: %s", job.job_id, reason[:200])
         self._send(job, FAILED.format(name=job.file_name, reason=_clip(reason, 3500)))
 
-    def _translate(self, job: Job) -> str | None:
+    def _translate(
+        self, job: Job, place: _Place, sweep: Callable[[], None]
+    ) -> str | None:
         """Run Claude; return its final report, or ``None`` after reporting failure."""
         try:
             proc = self._run(
                 build_claude_argv(),
-                cwd=self._workdir,
+                cwd=place.cwd,
                 input=build_prompt(job),
                 capture_output=True,
                 text=True,
                 timeout=JOB_TIMEOUT_SECONDS,
-                env=_child_env(self._env),
+                env=place.env,
                 check=False,
+                **place.ids,
             )
         except subprocess.TimeoutExpired:
             self._fail(
@@ -338,7 +405,7 @@ class ClaudeRunner:
             return None
         finally:
             # setsid'd leftovers escape the process group; sweep by UID.
-            _sweep_strays()
+            sweep()
         result = _parse_result(proc.stdout or "")
         report = str(result.get("result") or "")
         # Denials mean the allowlist blocked a step the skill needed.
@@ -354,22 +421,23 @@ class ClaudeRunner:
             return None
         return report
 
-    def _deliver(self, job: Job, report: str) -> None:
+    def _deliver(self, job: Job, report: str, place: _Place) -> None:
         """Send ``<stem>_ko.txt`` only if ``verify`` passes (golden principle 5)."""
         source, target = f"{job.stem}_en.txt", f"{job.stem}_ko.txt"
-        translation = self._workdir / target
+        translation = place.cwd / target
         if not translation.exists():
             self._fail(job, f"번역 파일이 만들어지지 않았습니다.\n\n{report}")
             return
         try:
             verify = self._run(
                 [sys.executable, "-P", "-m", "src.main", "verify", source, target],
-                cwd=self._workdir,
+                cwd=place.cwd,
                 capture_output=True,
                 text=True,
                 timeout=VERIFY_TIMEOUT_SECONDS,
-                env={**_child_env(self._env), "COLUMNS": "200"},
+                env={**place.env, "COLUMNS": "200"},
                 check=False,
+                **place.ids,
             )
         except (subprocess.TimeoutExpired, OSError) as exc:
             self._fail(job, f"구조 검증(verify)을 실행하지 못했습니다: {exc}")
@@ -386,7 +454,7 @@ class ClaudeRunner:
             self._fail(
                 job,
                 f"번역본이 50 MB를 넘어 Telegram으로 보낼 수 없습니다. "
-                f"서버의 {target}을(를) 확인하세요.",
+                f"서버의 {translation}을(를) 확인하세요.",
             )
             return
         try:
@@ -398,7 +466,7 @@ class ClaudeRunner:
             self._fail(
                 job,
                 f"번역은 끝났지만 번역본을 Telegram으로 보내지 못했습니다({exc}). "
-                f"서버의 {target}을(를) 확인하세요.",
+                f"서버의 {translation}을(를) 확인하세요.",
             )
             return
         if report.strip():
