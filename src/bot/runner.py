@@ -45,6 +45,9 @@ ALLOWED_TOOLS = (
 PROTECTED_PATHS = (
     "src/**",
     "tests/**",
+    ".venv/**",
+    "inbox/**",
+    ".mcp.json",
     ".claude/**",
     ".github/**",
     ".git/**",
@@ -75,6 +78,8 @@ CHILD_ENV_KEYS = (
     "CLAUDE_CODE_OAUTH_TOKEN",
     "CLAUDE_CONFIG_DIR",
     "UV_CACHE_DIR",
+    "UV_NO_SYNC",
+    "UV_FROZEN",
     "XDG_CACHE_HOME",
     "XDG_CONFIG_HOME",
 )

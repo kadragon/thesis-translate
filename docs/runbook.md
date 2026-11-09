@@ -43,15 +43,36 @@ It exits 1 with a Korean message if the token or allowlist is missing. Accepted 
 `inbox/<stem>.pdf`, wait in an in-memory queue, and run one at a time through `claude -p`
 from the directory the bot was started in (start it from the repo root).
 
-Server/container requirements (deployment steps land with the container slice):
+### Container (deployment)
 
-- `pdftotext` (poppler-utils), `uv`, Python 3.12, and the `claude` CLI on `PATH`.
-- Claude auth for headless runs: run `claude setup-token` on a logged-in machine and set the
-  printed token as `CLAUDE_CODE_OAUTH_TOKEN` on the server.
-- The translate-paper skill comes with the repo checkout, but its kr-style step invokes
-  `prod:kr-style` from a user plugin. Install that plugin on the server, or the step is
-  skipped — check the bot's job log for it.
-- Run from the repo root (the skill resolves `glossary.json` and `<stem>_*.txt` against CWD).
+```bash
+cp .env.example .env        # fill in the three values; stays on the host
+claude setup-token          # on a logged-in machine → CLAUDE_CODE_OAUTH_TOKEN
+docker build -t thesis-translate-bot .
+docker run -d --name thesis-bot --restart unless-stopped --env-file .env thesis-translate-bot
+docker logs -f thesis-bot   # job lines: exit code, cost, 거부된 도구 호출 N건
+```
+
+Update: `git pull`, rebuild, `docker rm -f thesis-bot`, run again. A rebuild also discards
+anything a job wrote, since outputs live only in the container (they reach the user via
+Telegram; `docker cp thesis-bot:/app/<stem>_ko.txt .` before removing it if needed).
+
+What the image guarantees (verified with `docker run … bash`):
+
+- Runs as uid `bot`. `/app` and `.venv` are root-owned and read-only for `bot`; `/app` has
+  the sticky bit, so jobs can create `<stem>_*` files and `inbox/` but cannot modify, rename,
+  or delete code, the harness, or `glossary.json` — this is what contains the
+  `Bash(python…)` entries in the tool allowlist.
+- `.env` is never in the image (`.dockerignore`); secrets arrive via `--env-file`, and the
+  runner passes only `CHILD_ENV_KEYS` to `claude`.
+- Claude Code version is pinned (`CLAUDE_CODE_VERSION` build arg); the `prod@kadragon`
+  plugin (kr-style) is installed for `bot`.
+
+Not configured: network egress limits. If the host allows it, restrict outbound traffic to
+`api.anthropic.com`, `api.telegram.org`, and the Claude auth endpoints.
+
+Local run without Docker: start from the repo root so the skill finds `glossary.json` and
+`<stem>_*.txt` (the model then has your full user rights — prefer the container).
 
 ## Environment Variables
 
@@ -61,7 +82,8 @@ Server/container requirements (deployment steps land with the container slice):
 | `TELEGRAM_ALLOWED_CHAT_IDS` | bot | Comma-separated chat IDs the bot serves; everyone else is ignored |
 | `CLAUDE_CODE_OAUTH_TOKEN` | bot (server) | Headless Claude auth from `claude setup-token` |
 
-Keep real values in `.env` (gitignored) or the host's secret store. Find a chat ID by sending
+Template: `.env.example`. Keep real values in `.env` (gitignored, excluded from the image)
+or the host's secret store. Find a chat ID by sending
 the bot a message and reading `message.chat.id` from `getUpdates`.
 
 ## Common Failures

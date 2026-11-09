@@ -99,6 +99,8 @@ def test_allowlist_has_no_web_tools_and_denies_them_explicitly():
         "Edit(./.claude/**)",
         "Write(./.claude/**)",
         "Edit(./glossary.json)",
+        "Write(./.venv/**)",
+        "Write(./.mcp.json)",
         "Write(./pyproject.toml)",
         "Read(./.env)",
     ],
@@ -158,6 +160,7 @@ def test_child_env_is_an_allowlist_without_bot_or_other_secrets(tmp_path):
         "CLAUDE_CODE_OAUTH_TOKEN": "oauth",
         "PATH": "/usr/bin",
         "HOME": "/home/bot",
+        "UV_NO_SYNC": "1",
     }
     runner, _ = _runner(tmp_path, run, env)
 
@@ -167,6 +170,7 @@ def test_child_env_is_an_allowlist_without_bot_or_other_secrets(tmp_path):
         "CLAUDE_CODE_OAUTH_TOKEN": "oauth",
         "PATH": "/usr/bin",
         "HOME": "/home/bot",
+        "UV_NO_SYNC": "1",
     }
 
 

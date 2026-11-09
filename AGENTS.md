@@ -7,7 +7,7 @@
 | `docs/runbook.md` | Setup, test/lint commands, bot deployment, env vars, known failures |
 | `docs/architecture.md` | Before touching module boundaries or building the Telegram bot (`src/bot/`) |
 | `.claude/skills/translate-paper/SKILL.md` | Translating a paper — the only translation procedure (CLI and bot) |
-| `backlog.md` | Queued work, including the Telegram bot slices |
+| `backlog.md` | Queued work and open review findings |
 
 ## Golden Principles
 
@@ -59,16 +59,10 @@ Updates (newest first, keep ~5).
 
 ## Updates
 
-- 2026-11-09: Bot result gate: `verify` must pass before `<stem>_ko.txt` goes out via
-  `sendDocument` (50 MB cap), followed by Claude's report; failures go to the chat.
-- 2026-11-09: Bot job runner `src/bot/runner.py`: `claude -p --permission-mode dontAsk` with a
-  tool allowlist, prompt on stdin, 4 h timeout, failures reported to the chat.
-- 2026-11-09: Bot intake: PDF download to `inbox/` (non-PDF, >20 MB, bad header rejected),
-  sanitized `<stem>` with job-ID suffix on collision, in-memory single-worker `JobQueue`.
-- 2026-11-09: Bot skeleton `thesis-translate-bot` (`src/bot/`): stdlib long polling,
-  allowlist gate, Korean receipt for PDFs; refuses to start without token/allowlist.
-- 2026-11-09: Harness set up for the Telegram bot (`docs/`, golden principles, ruff ban on LLM
-  SDKs, `.claude/settings.json` deny rules). OpenAI-era archive sections removed.
+- 2026-11-09: Telegram bot `thesis-translate-bot` (`src/bot/`, `Dockerfile`): allowlisted
+  chats, PDF intake to `inbox/`, single-worker queue, headless `claude -p` with a tool
+  allowlist and protected-path denies, `verify` gate before `sendDocument`. Harness set up
+  (`docs/`, golden principles, ruff ban on LLM SDKs); OpenAI-era archive sections removed.
 - 2026-11-08: `verify` also warns on missing source numbers, `Figure/Table N` without
   `그림/표 N`, and term-table violations; `extract` refuses scans; new `dual` command.
 - 2026-11-08: `extract` splits paragraphs by `pdftotext -bbox-layout` line geometry;
