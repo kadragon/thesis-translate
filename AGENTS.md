@@ -1,39 +1,71 @@
 # AGENTS
 
-## Updates
-- 2026-11-08: `verify` also warns on missing source numbers, `Figure/Table N` without `그림/표 N`, and term-table violations (`glossary.json` + `<stem>_terms.json`, or `--glossary`); `extract` refuses scans (over half the pages blank); new `dual` command writes `<stem>_dual.txt`. translate-paper skill adds term-table and accuracy-review steps.
-- 2026-11-08: `extract` reads `pdftotext -bbox-layout` and splits paragraphs by line geometry (indent, short last line, heading lines, vertical gap) so indent-only layouts like two-column IEEE no longer come out as one blob; `verify` warns when a translation is under 0.3x its source length.
-- 2026-11-08: OpenAI translation pipeline removed. Claude translates directly via `.claude/skills/translate-paper`; CLI is now `thesis-translate extract|verify|format` (pdftotext-based PDF extraction, structure check). Archived entries below that mention chunks, retries, workers or OpenAI describe removed code.
-- 2026-01-08: Tiny last chunk merge now happens in translate via _merge_tiny_last_chunk; chunk_generator no longer merges.
-- 2026-01-08: Added model token limits map with env overrides for MODEL_CONTEXT_LENGTH and MODEL_MAX_OUTPUT_TOKENS.
-- 2026-01-08: Chunk merging now reuses chunk token counts from _build_chunks to avoid re-tokenization.
-- 2026-01-08: Chunk merge now respects max_token_length; tiny last chunk only merges if combined size is within limit.
-- 2026-01-07: Menu prompts accept lowercase inputs via case-insensitive choices.
-- 2026-01-07: Translation prompt must output only translated text (no source echo).
-- 2026-01-08: SSD-based development process (.spec/.governance/.tasks) retired; key content migrated to AGENTS.md; folders slated for deletion.
+## Docs Index (read on demand)
+
+| File | When to read |
+|------|--------------|
+| `docs/runbook.md` | Setup, test/lint commands, bot deployment, env vars, known failures |
+| `docs/architecture.md` | Before touching module boundaries or building the Telegram bot (`src/bot/`) |
+| `.claude/skills/translate-paper/SKILL.md` | Translating a paper — the only translation procedure (CLI and bot) |
+| `backlog.md` | Queued work and open review findings |
+
+## Golden Principles
+
+1. **No external LLM API.** Claude translates via the translate-paper skill; the bot reaches
+   Claude only through the `claude -p` CLI. Enforced: ruff `TID251` bans `openai` and
+   `anthropic` imports (`pyproject.toml`).
+2. **Bot answers allowlisted chats only.** Updates from a chat ID outside
+   `TELEGRAM_ALLOWED_CHAT_IDS` are dropped before any download or job. Enforced:
+   `tests/test_bot.py::test_non_allowlisted_chat_gets_no_reply_and_no_download`.
+3. **Headless Claude runs with a tool allowlist.** Paper text is untrusted input. Never
+   `--dangerously-skip-permissions` or `bypassPermissions`; no web tools in the allowlist.
+   Enforced: `tests/test_bot_runner.py` (argv, allowlist, protected-path denies, child env
+   allowlist).
+4. **Secrets come from the environment only.** `TELEGRAM_BOT_TOKEN`,
+   `CLAUDE_CODE_OAUTH_TOKEN` live in `.env` (gitignored) or the host's secret store, never in
+   code, logs, or Telegram replies. Enforced: `.gitignore`, `.claude/settings.json` deny.
+5. **One source block → one translated block, `p.N` lines untouched.** Enforced:
+   `thesis-translate verify` (exit 1 on mismatch); the bot sends `_ko.txt` only after verify
+   passes (`tests/test_bot_runner.py::test_failed_verify_sends_no_document`).
+
+## Working with Existing Code
+
+- `src/core/` is pure (no I/O beyond the files it is handed, no Telegram, no subprocess to
+  `claude`). The bot lives in `src/bot/` and calls the CLI/skill, never the reverse.
+- Paper outputs (`*.txt`, `*_terms.json`, `*_review.md`) sit in the repo root and are
+  gitignored (`*.txt`); do not commit them or clean them up unasked.
+- Bulk edits on Korean text: Python with explicit UTF-8, never `sed`/`perl` with non-ASCII
+  literals (they corrupt bytes on macOS).
+- `extract` refuses to overwrite an existing `_en.txt` (hand cleanup lives there); `--force`
+  only on a deliberate re-extract.
 
 ## Governance
+
 - TDD required: add a failing test for each behavior change, then implement the minimum code.
 - Do not mix structural and behavioral changes in a single commit.
-- Run the full test suite (excluding long-running tests) before committing.
+- Run the full suite before committing (`uv run pytest`; pre-commit runs ruff, mypy, pytest).
 
-## Archived Specs (from .spec/)
-- SPEC-REFACTOR-VALIDATION-001: Make progress parameter None-safe with a NoOp handler and document behavior.
-- SPEC-REFACTOR-CONSTANTS-001: Extract magic numbers into class constants (timeouts, token ratios, indent).
-- SPEC-REFACTOR-COVERAGE-001: Reach 100% coverage for main.py exception path (test or pragma).
-- SPEC-REFACTOR-DEDUP-001: Deduplicate sequential/parallel translation paths via shared helpers.
-- SPEC-REFACTOR-EXCEPTIONS-001: Merge Transient/Permanent errors into TranslationError(is_transient).
-- SPEC-RICH-UX-001: Rich console UX (shared Console + RichHandler, transient progress).
-- SPEC-PARALLEL-CHUNKS-001: ThreadPool-based parallel chunk translation (max_workers).
-- SPEC-BALANCED-CHUNKS-001: Balanced chunk distribution (pre-scan tokens, target size).
-- SPEC-CONFIG-001: Env-backed config and glossary loading with missing-key validation.
+## Language Policy
 
-## Archived Governance (from .governance/)
-- No env config: files are named after the PDF (`<stem>_en.txt` source, `<stem>_ko.txt` translation); glossary is `glossary.json` in repo root.
-- Coding style: prefer explicit typing/runtime validation for config; keep `Trace: SPEC-ID, TASK-ID` near top of touched modules.
-- Learned patterns: NoOp handler, helper extraction for shared logic, prefer is_transient flag over exception hierarchy, entry-point pragma usage.
-- Task YAML rules: backlog/current/done split, 2-space indentation, multiline uses `|`.
+- Code, comments, commits, `docs/`, `AGENTS.md`, skills: English.
+- CLI log messages, bot replies, `README.md`: Korean (existing convention).
 
-## Archived Tasks (from .tasks/)
-- current_task: null; backlog: empty.
-- done (2025-11-17 to 2025-12-28, most recent 10): env-based config, parallel/balanced chunks, Rich UX, constants, 100% coverage, exception unification, progress NoOp, sequential/parallel dedup.
+## Maintenance
+
+Edit this file only for stable, non-inferable guidance whose absence causes mistakes; prefer
+fixing stale lines over appending, and move detail into `docs/`. Durable repo facts go here or
+in `docs/`; personal preferences stay in auto-memory. Log notable behavior changes under
+Updates (newest first, keep ~5).
+
+## Updates
+
+- 2026-11-09: Telegram bot `thesis-translate-bot` (`src/bot/`, `Dockerfile`): allowlisted
+  chats, PDF intake to `inbox/`, single-worker queue, headless `claude -p` with a tool
+  allowlist and protected-path denies, `verify` gate before `sendDocument`. Harness set up
+  (`docs/`, golden principles, ruff ban on LLM SDKs); OpenAI-era archive sections removed.
+- 2026-11-08: `verify` also warns on missing source numbers, `Figure/Table N` without
+  `그림/표 N`, and term-table violations; `extract` refuses scans; new `dual` command.
+- 2026-11-08: `extract` splits paragraphs by `pdftotext -bbox-layout` line geometry;
+  `verify` warns when a translation is under 0.3x its source length.
+- 2026-11-08: OpenAI translation pipeline removed; CLI is `thesis-translate
+  extract|verify|format|dual`.

@@ -15,6 +15,7 @@ dependencies = [
 
 [project.scripts]
 thesis-translate = "src.main:main"
+thesis-translate-bot = "src.bot.main:main"
 
 [project.optional-dependencies]
 dev = [
@@ -31,6 +32,10 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "EM", "ICN", "G", "INP", "PIE", "T20", "PYI", "RET", "RSE", "RUF", "SIM", "TID", "TCH", "INT", "ARG", "PTH", "ERA", "PGH", "PL", "TRY", "FLY", "PERF", "FURB", "LOG", "SLOT"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"openai".msg = "No external LLM API: Claude translates via the translate-paper skill (AGENTS.md principle 1)."
+"anthropic".msg = "No external LLM API: call the `claude -p` CLI instead (AGENTS.md principle 1)."
 
 [tool.ruff.format]
 quote-style = "double"
