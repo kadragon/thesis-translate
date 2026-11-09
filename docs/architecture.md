@@ -1,0 +1,71 @@
+# Architecture
+
+## Source Layout
+
+| Path | Role | May import |
+|------|------|-----------|
+| `src/core/pdf_extractor.py` | `pdftotext -bbox-layout` → paragraph blocks with `p.N` markers | stdlib |
+| `src/core/alignment.py` | Block I/O and `verify` checks (structure, numbers, figure refs, terms) | stdlib |
+| `src/utils/` | Output formatting, Rich logging | stdlib, `rich` |
+| `src/main.py` | `thesis-translate extract\|verify\|format\|dual` CLI | `core`, `utils` |
+| `src/bot/` | Telegram bot: `config` (env), `telegram_api` (urllib client), `handler` (allowlist, PDF/size checks), `intake` (download, stem), `jobs` (queue), `main` (poll loop, wiring) | `core`, `utils`, stdlib `subprocess` |
+
+Dependency direction: `bot` → `main`/`core`/`utils`. `core` never imports `bot` or `main`.
+
+## Translation Is a Skill, Not Code
+
+The translation step (term table, block-by-block translation, accuracy review, kr-style
+polish) is a procedure in `.claude/skills/translate-paper/SKILL.md` that Claude Code executes.
+Python code only prepares input (`extract`) and checks output (`verify`, `format`, `dual`).
+Any new entry point — including the bot — drives that skill; it does not reimplement it.
+
+## Telegram Bot — decided constraints
+
+Decided on 2026-11-09: headless `claude -p`, runs on a separate server/container, allowlisted
+chat IDs only.
+
+```
+Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
+                           │ one job at a time
+                           ▼
+                  inbox/<job>.pdf  (gitignored)
+                           │ subprocess, cwd = repo root
+                           ▼
+          claude -p "<translate-paper request>" --allowedTools …
+                           │ runs extract → … → verify → format
+                           ▼
+          <stem>_ko.txt (+ _dual.txt) ──sendDocument──▶ same chat
+```
+
+- **Transport**: long polling (`getUpdates`); no public endpoint or webhook needed.
+- **Access**: drop any update whose chat ID is not in `TELEGRAM_ALLOWED_CHAT_IDS` before
+  downloading anything (golden principle 2).
+- **Input**: accept `application/pdf` documents only. Bot API downloads cap at 20 MB; reply
+  with a Korean error above that instead of failing silently.
+- **Queue**: one translation at a time. Jobs share the repo root (the skill's file contract:
+  `<stem>_*.txt` and `glossary.json` resolve against the CWD), and a paper takes minutes to
+  hours on one subscription. Acknowledge receipt and queue position immediately.
+- **Claude invocation**: argv built by one function so a test can assert it — `-p`, an explicit
+  `--allowedTools` list (`Read`, `Edit`, `Write`, `Skill`, `Bash(uv run thesis-translate:*)`,
+  `Bash(pdftotext:*)`), no web tools, never a permission bypass (golden principle 3). The
+  skill's bulk Unicode edits need `Bash(uv run python:*)`, which is arbitrary code execution
+  — allow it only because the container is the sandbox, and say so in the argv test. Use `--output-format json` to read the result and
+  cost; apply a wall-clock timeout.
+- **Stem**: `sanitize_stem` keeps the base name only, maps unsafe characters to `_`, strips
+  leading `-`/`.` (no CLI flags), caps 120 chars. If `<stem>` is queued/running or
+  `inbox/<stem>.pdf`, `<stem>_en.txt`, `<stem>_ko.txt` exists, append `_<job_id>` instead of
+  `--force`.
+- **Content check**: after download the file must carry `%PDF-` in its first 1024 bytes;
+  otherwise it is deleted and the user told.
+- **Result gate**: run `uv run thesis-translate verify` from the bot after Claude exits; deliver
+  `_ko.txt` only on exit 0, otherwise send the failure summary (golden principle 5). Bot
+  uploads cap at 50 MB.
+- **Scans**: `extract` refuses image-only PDFs; relay that message — OCR is out of scope.
+
+Client library: none — `src/bot/telegram_api.py` calls the Bot API with stdlib `urllib`
+(no new dependency; the bot needs only `getUpdates`, `sendMessage`, file download/upload).
+The allowlist must not be empty: `load_config` refuses to start otherwise.
+
+The queue is in memory: a restart drops queued jobs (the PDFs stay in `inbox/`).
+
+Open: job persistence across restarts, whether `_dual.txt` is sent by default.
