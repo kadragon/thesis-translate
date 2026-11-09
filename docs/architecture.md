@@ -61,7 +61,9 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
   environ. Residual risk: Python can bypass path denies — the container setup in
   `docs/runbook.md` is what contains it.
   Claude runs via `run_in_group` (new session); its whole process group is killed and
-  reaped after it exits or times out, so no tool subprocess outlives the job. Every text
+  reaped after it exits or times out. Hostile code can `setsid` out of the group, so as
+  PID 1 (container) the runner also SIGKILLs every other process of its UID
+  (`kill_same_uid_strays`) before verify and upload. Every text
   sent to Telegram goes through `ClaudeRunner._redact` (`SECRET_ENV_KEYS` values and
   `sk-ant-…` tokens). Notifier failures are logged; a failed upload falls back to a text
   message naming the server-side file.

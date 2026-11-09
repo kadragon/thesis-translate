@@ -15,11 +15,11 @@ import signal
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
-    from pathlib import Path
 
     from src.bot.jobs import Job
 
@@ -187,10 +187,10 @@ def run_in_group(
     except subprocess.TimeoutExpired:
         _kill_group(proc.pid)
         proc.communicate()
-        _reap_group(proc.pid)
+        _reap(-proc.pid)
         raise
     _kill_group(proc.pid)
-    _reap_group(proc.pid)
+    _reap(-proc.pid)
     return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
 
 
@@ -199,15 +199,60 @@ def _kill_group(pgid: int) -> None:
         os.killpg(pgid, signal.SIGKILL)
 
 
-def _reap_group(pgid: int) -> None:
-    """Reap orphans re-parented to us (the bot is PID 1 in the container)."""
+def _reap(pid_spec: int) -> None:
+    """``waitpid(pid_spec)`` until nothing is left: ``-pgid`` for one group, ``-1``
+    for any child. Orphans are re-parented to us (the bot is PID 1)."""
     for _ in range(_REAP_ATTEMPTS):
         try:
-            pid, _status = os.waitpid(-pgid, os.WNOHANG)
+            pid, _status = os.waitpid(pid_spec, os.WNOHANG)
         except ChildProcessError:
             return
         if pid == 0:
             time.sleep(_REAP_INTERVAL_SECONDS)
+
+
+def kill_same_uid_strays(
+    *,
+    proc_root: Path = Path("/proc"),
+    self_pid: int | None = None,
+    uid: int | None = None,
+    kill: Callable[[int, int], None] = os.kill,
+) -> int:
+    """SIGKILL every process of our UID except ourselves; return how many.
+
+    Process groups do not contain hostile code (it can ``setsid``), so in the
+    container — where the bot is PID 1 and every other ``bot`` process belongs
+    to a job — sweep them all after each run. Never call this outside PID 1.
+    """
+    self_pid = os.getpid() if self_pid is None else self_pid
+    uid = os.getuid() if uid is None else uid
+    killed = 0
+    for entry in proc_root.iterdir():
+        if not entry.name.isdigit() or int(entry.name) == self_pid:
+            continue
+        try:
+            status = (entry / "status").read_text()
+        except OSError:
+            continue
+        uid_line = next((x for x in status.splitlines() if x.startswith("Uid:")), "")
+        if uid_line.split()[1:2] != [str(uid)]:
+            continue
+        try:
+            kill(int(entry.name), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            continue
+        killed += 1
+    return killed
+
+
+def _sweep_strays() -> None:
+    """Container-only (PID 1) cleanup after a job's Claude run."""
+    if os.getpid() != 1:
+        return
+    killed = kill_same_uid_strays()
+    if killed:
+        logger.warning("작업 종료 후 남은 프로세스 %d개를 종료했습니다.", killed)
+    _reap(-1)
 
 
 def _child_env(env: Mapping[str, str]) -> dict[str, str]:
@@ -291,6 +336,9 @@ class ClaudeRunner:
         except OSError as exc:
             self._fail(job, f"claude CLI를 실행할 수 없습니다: {exc}")
             return None
+        finally:
+            # setsid'd leftovers escape the process group; sweep by UID.
+            _sweep_strays()
         result = _parse_result(proc.stdout or "")
         report = str(result.get("result") or "")
         # Denials mean the allowlist blocked a step the skill needed.

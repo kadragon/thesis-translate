@@ -16,6 +16,7 @@ from src.bot.runner import (
     ClaudeRunner,
     build_claude_argv,
     build_prompt,
+    kill_same_uid_strays,
     run_in_group,
 )
 
@@ -428,3 +429,50 @@ def test_run_in_group_returns_output_and_code():
     proc = run_in_group(["sh", "-c", "cat; exit 3"], input="hi", timeout=5)
 
     assert (proc.returncode, proc.stdout) == (3, "hi")
+
+
+def _fake_proc(tmp_path, entries):
+    for pid, uid in entries:
+        d = tmp_path / str(pid)
+        d.mkdir()
+        (d / "status").write_text(f"Name:\tx\nUid:\t{uid}\t{uid}\t{uid}\t{uid}\n")
+    (tmp_path / "self").mkdir()
+    return tmp_path
+
+
+def test_kill_same_uid_strays_spares_self_and_other_users(tmp_path):
+    proc = _fake_proc(tmp_path, [(1, 10001), (40, 10001), (41, 0), (42, 10001)])
+    killed: list[int] = []
+
+    count = kill_same_uid_strays(
+        proc_root=proc, self_pid=1, uid=10001, kill=lambda pid, _sig: killed.append(pid)
+    )
+
+    assert sorted(killed) == [40, 42]
+    assert count == len(killed)
+
+
+def test_kill_same_uid_strays_ignores_processes_that_already_exited(tmp_path):
+    proc = _fake_proc(tmp_path, [(40, 10001)])
+
+    def gone(_pid, _sig):
+        raise ProcessLookupError
+
+    assert kill_same_uid_strays(proc_root=proc, self_pid=1, uid=10001, kill=gone) == 0
+
+
+def test_runner_sweeps_strays_only_as_pid_1(tmp_path, monkeypatch):
+    swept: list[bool] = []
+    monkeypatch.setattr(
+        "src.bot.runner.kill_same_uid_strays", lambda: swept.append(True)
+    )
+    run = FakeRun(_claude_ok())
+
+    monkeypatch.setattr("src.bot.runner.os.getpid", lambda: 4321)
+    _runner(tmp_path, run)[0](JOB)
+    assert swept == []
+
+    run = FakeRun(_claude_ok())
+    monkeypatch.setattr("src.bot.runner.os.getpid", lambda: 1)
+    _runner(tmp_path, run)[0](JOB)
+    assert swept == [True]
