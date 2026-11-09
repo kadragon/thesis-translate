@@ -7,7 +7,6 @@ import pytest
 
 from src.bot.intake import DOWNLOAD_FAILED, NOT_PDF_CONTENT, Intake, sanitize_stem
 from src.bot.jobs import Job, JobQueue
-from src.bot.main import _placeholder_runner
 
 OWNER = 111
 PDF_BYTES = b"%PDF-1.7\n..."
@@ -203,17 +202,3 @@ def test_default_job_ids_are_short_and_unique(tmp_path):
     ids = [job.job_id for job in queue.pending()]
     assert len(set(ids)) == len(ids)
     assert all(len(job_id) == len("0123abcd") for job_id in ids)
-
-
-def test_placeholder_runner_tells_the_user_runner_is_missing():
-    sent: list[tuple[int, str]] = []
-
-    class Sender:
-        def send_message(self, chat_id, text):
-            sent.append((chat_id, text))
-
-    _placeholder_runner(Sender())(_job("a"))
-
-    assert sent == [
-        (OWNER, "a.pdf 차례가 되었지만 번역 실행기가 아직 연결되지 않았습니다.")
-    ]

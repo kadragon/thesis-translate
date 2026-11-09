@@ -8,6 +8,5 @@
 
 ## Telegram bot (design: docs/architecture.md → Telegram Bot)
 
-- [ ] [feat] Job runner (replaces `_placeholder_runner` in `src/bot/main.py`): build `claude -p` argv (tool allowlist, no bypass, JSON output, timeout) in one function and run it from the repo root — test asserts the argv (AGENTS.md principle 3)
 - [ ] [feat] Result gate: run `verify`; on exit 0 send `<stem>_ko.txt` via `sendDocument`, else send the failure summary
 - [ ] [chore] Container image (poppler, uv, claude CLI, kr-style plugin) and deployment steps in `docs/runbook.md`

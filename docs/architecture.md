@@ -45,12 +45,15 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
 - **Queue**: one translation at a time. Jobs share the repo root (the skill's file contract:
   `<stem>_*.txt` and `glossary.json` resolve against the CWD), and a paper takes minutes to
   hours on one subscription. Acknowledge receipt and queue position immediately.
-- **Claude invocation**: argv built by one function so a test can assert it — `-p`, an explicit
-  `--allowedTools` list (`Read`, `Edit`, `Write`, `Skill`, `Bash(uv run thesis-translate:*)`,
-  `Bash(pdftotext:*)`), no web tools, never a permission bypass (golden principle 3). The
-  skill's bulk Unicode edits need `Bash(uv run python:*)`, which is arbitrary code execution
-  — allow it only because the container is the sandbox, and say so in the argv test. Use `--output-format json` to read the result and
-  cost; apply a wall-clock timeout.
+- **Claude invocation** (`src/bot/runner.py`): `build_claude_argv()` is the single argv
+  source — `claude -p --output-format json --permission-mode dontAsk
+  --no-session-persistence --allowedTools … --disallowedTools WebFetch WebSearch`; the prompt
+  goes in on stdin (the variadic tool flags would swallow a positional prompt). `dontAsk`
+  denies anything off the list. `ALLOWED_TOOLS` includes `Bash(uv run python:*)` and
+  `Bash(python3:*)` for the skill's UTF-8 edits and the kr-style audit — arbitrary code,
+  acceptable only inside the container. `TELEGRAM_*` env vars are stripped from the child.
+  Timeout 4 h. The log line counts `permission_denials`: a non-zero count means the allowlist
+  blocked a skill step.
 - **Stem**: `sanitize_stem` keeps the base name only, maps unsafe characters to `_`, strips
   leading `-`/`.` (no CLI flags), caps 120 chars. If `<stem>` is queued/running or
   `inbox/<stem>.pdf`, `<stem>_en.txt`, `<stem>_ko.txt` exists, append `_<job_id>` instead of

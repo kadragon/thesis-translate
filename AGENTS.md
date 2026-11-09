@@ -19,7 +19,7 @@
    `tests/test_bot.py::test_non_allowlisted_chat_gets_no_reply_and_no_download`.
 3. **Headless Claude runs with a tool allowlist.** Paper text is untrusted input. Never
    `--dangerously-skip-permissions` or `bypassPermissions`; no web tools in the allowlist.
-   Enforced: a test on the argv builder (lands with the job-runner slice).
+   Enforced: `tests/test_bot_runner.py` (argv, allowlist, child env without `TELEGRAM_*`).
 4. **Secrets come from the environment only.** `TELEGRAM_BOT_TOKEN`,
    `CLAUDE_CODE_OAUTH_TOKEN` live in `.env` (gitignored) or the host's secret store, never in
    code, logs, or Telegram replies. Enforced: `.gitignore`, `.claude/settings.json` deny.
@@ -57,6 +57,8 @@ Updates (newest first, keep ~5).
 
 ## Updates
 
+- 2026-11-09: Bot job runner `src/bot/runner.py`: `claude -p --permission-mode dontAsk` with a
+  tool allowlist, prompt on stdin, 4 h timeout, failures reported to the chat.
 - 2026-11-09: Bot intake: PDF download to `inbox/` (non-PDF, >20 MB, bad header rejected),
   sanitized `<stem>` with job-ID suffix on collision, in-memory single-worker `JobQueue`.
 - 2026-11-09: Bot skeleton `thesis-translate-bot` (`src/bot/`): stdlib long polling,

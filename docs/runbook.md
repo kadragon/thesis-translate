@@ -40,8 +40,8 @@ uv run thesis-translate-bot      # long polling; Ctrl+C to stop
 ```
 
 It exits 1 with a Korean message if the token or allowlist is missing. Accepted PDFs land in
-`inbox/<stem>.pdf` and wait in an in-memory queue; until the job-runner slice lands, each job
-only gets a "실행기가 아직 연결되지 않았습니다" reply when its turn comes.
+`inbox/<stem>.pdf`, wait in an in-memory queue, and run one at a time through `claude -p`
+from the directory the bot was started in (start it from the repo root).
 
 Server/container requirements (deployment steps land with the container slice):
 
@@ -80,5 +80,9 @@ pdftotext's stderr.
 
 **Garbled Korean after a shell edit** — `sed`/`perl` with non-ASCII literals on macOS. Redo the
 edit in Python with explicit UTF-8.
+
+**Bot: a translation step silently skipped** — the job log line shows `거부된 도구 호출 N건`
+with N > 0: the tool allowlist (`ALLOWED_TOOLS` in `src/bot/runner.py`) blocked it. Add the
+narrowest matching entry plus a test.
 
 **Bot: file too large** — Bot API downloads cap at 20 MB, uploads at 50 MB.
