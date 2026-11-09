@@ -287,7 +287,12 @@ def test_reset_removes_shared_tmp_files_of_any_job_uid(tmp_path):
 def test_sweep_waits_between_rounds_and_logs_survivors(tmp_path, caplog):
     rounds: list[int] = []
     iso, _ = _isolation(tmp_path)
-    iso._kill_strays = lambda uid: rounds.append(uid) or 1
+
+    def never_done(uid):
+        rounds.append(uid)
+        return 1
+
+    iso._kill_strays = never_done
     space = iso.prepare(_job(tmp_path))
 
     assert iso.sweep(space) is False

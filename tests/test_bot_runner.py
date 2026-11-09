@@ -19,7 +19,7 @@ from src.bot.runner import (
     kill_same_uid_strays,
     run_in_group,
 )
-from src.bot.workspace import Isolation
+from src.bot.workspace import Isolation, JobSpace
 
 OWNER = 111
 JOB = Job("j1", OWNER, "Lacy 2022.pdf", "Lacy 2022", Path("inbox/Lacy 2022.pdf"))
@@ -482,31 +482,32 @@ def test_runner_sweeps_strays_only_as_pid_1(tmp_path, monkeypatch):
 # --- per-job isolation (root mode) -------------------------------------------
 
 
-class FakeIsolation:
-    """Real directory layout under tmp_path; records sweeps and discards."""
+class FakeIsolation(Isolation):
+    """Real directory layout under tmp_path; records workspaces and sweeps."""
 
     def __init__(self, tmp_path):
         app = tmp_path / "app"
         (app / "inbox").mkdir(parents=True, exist_ok=True)
         self.swept: list[int] = []
-        self.inner = Isolation(
+        self.spaces: list[JobSpace] = []
+        super().__init__(
             app_dir=app,
             jobs_dir=tmp_path / "jobs",
             outputs_dir=app / "outputs",
             home_template=tmp_path / "no-template",
             chown=lambda *_a, **_k: None,
-            kill_strays=lambda uid: self.swept.append(uid) or 0,
+            kill_strays=self._record_sweep,
             shared_tmp=(),
         )
-        self.spaces: list = []
+
+    def _record_sweep(self, uid):
+        self.swept.append(uid)
+        return 0
 
     def prepare(self, job):
-        space = self.inner.prepare(job)
+        space = super().prepare(job)
         self.spaces.append(space)
         return space
-
-    def __getattr__(self, name):
-        return getattr(self.inner, name)
 
 
 def _iso_job(tmp_path):
@@ -627,9 +628,18 @@ def test_isolated_job_sweeps_uid_before_collecting_outputs(tmp_path):
     order: list[str] = []
     run = WritingRun(_claude_ok(), _verify(0))
     runner, _, iso = _iso_runner(tmp_path, run)
-    iso.inner._kill_strays = lambda _uid: order.append("sweep") or 0
-    collect = iso.inner.collect
-    iso.inner.collect = lambda *a: order.append("collect") or collect(*a)
+    collect = iso.collect
+
+    def sweep(_uid):
+        order.append("sweep")
+        return 0
+
+    def recording_collect(*args):
+        order.append("collect")
+        return collect(*args)
+
+    iso._kill_strays = sweep
+    iso.collect = recording_collect
 
     runner(_iso_job(tmp_path))
 
@@ -652,7 +662,7 @@ def test_failed_copy_out_is_reported_and_workspace_discarded(tmp_path):
     def broken(*_a):
         raise OSError(28, "No space left on device")
 
-    iso.inner.collect = broken
+    iso.collect = broken
 
     runner(_iso_job(tmp_path))
 
