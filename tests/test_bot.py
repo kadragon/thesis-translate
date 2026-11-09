@@ -341,9 +341,16 @@ def test_poll_once_advances_even_when_reply_fails():
 
 
 def test_isolation_is_off_and_warned_when_not_root(tmp_path, caplog):
-    assert build_isolation(tmp_path, euid=1000) is None
+    assert build_isolation(tmp_path, euid=1000, pid=4321) is None
     assert "격리" in caplog.text
-    assert "남은 프로세스를 정리하지 않습니다" in caplog.text
+    assert "남은 프로세스도 정리하지 않습니다" in caplog.text
+
+
+def test_non_root_pid_1_warning_does_not_claim_missing_cleanup(tmp_path, caplog):
+    # As PID 1 the runner still sweeps same-UID strays after each job.
+    assert build_isolation(tmp_path, euid=1000, pid=1) is None
+    assert "격리" in caplog.text
+    assert "정리하지 않습니다" not in caplog.text
 
 
 def test_isolation_is_built_and_reset_when_root(tmp_path):
