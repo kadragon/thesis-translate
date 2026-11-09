@@ -217,3 +217,19 @@ def test_find_term_violations_matches_uppercase_acronym_case_sensitively():
     assert find_term_violations(source, translation, terms) == [
         "p.1 #2: IT → 정보기술 없음: IT budgets grew."
     ]
+
+
+def test_find_figure_ref_mismatches_matches_lowercase_refs():
+    source = ["p.1", "As figure 2 and table 3 show.", "See fig. 4 and table IV."]
+    translation = ["p.1", "그림 2와 표 3에서 보듯이.", "fig. 4와 표 IV를 보라."]
+
+    assert find_figure_ref_mismatches(source, translation) == [
+        "p.1 #2: 그림 4 없음: See fig. 4 and table IV."
+    ]
+
+
+def test_find_figure_ref_mismatches_ignores_lowercase_word_after_table():
+    source = ["p.1", "The table civil engineers use."]
+    translation = ["p.1", "토목 기술자가 쓰는 표."]
+
+    assert find_figure_ref_mismatches(source, translation) == []
