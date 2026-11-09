@@ -231,3 +231,57 @@ def test_commands_report_missing_input_file(tmp_path, monkeypatch, caplog, comma
     with patch("src.main.configure_logging"):
         assert main(command) == 1
     assert "missing_" in caplog.text
+
+
+def test_verify_default_glossary_resolves_from_project_root(
+    tmp_path, monkeypatch, caplog
+):
+    root = tmp_path / "repo"
+    root.mkdir()
+    _write(
+        root / "glossary.json",
+        '[{"term": "transformer", "translation": "트랜스포머"}]',
+    )
+    work = tmp_path / "elsewhere"
+    work.mkdir()
+    src = _write(work / "s.txt", "  p.1\n\n  A transformer.\n\n")
+    dst = _write(work / "d.txt", "  p.1\n\n  변환기.\n\n")
+    monkeypatch.chdir(work)
+
+    with (
+        patch("src.main.PROJECT_ROOT", root),
+        patch("src.main.configure_logging"),
+    ):
+        assert main(["verify", src, dst]) == 0
+    assert "transformer → 트랜스포머 없음" in caplog.text
+
+
+def test_extract_keeps_glossary_compound_hyphen(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    _write(root / "glossary.json", '[{"term": "long-term", "translation": "장기"}]')
+    out = tmp_path / "paper_en.txt"
+
+    with (
+        patch("src.main.PROJECT_ROOT", root),
+        patch("src.main.extract_pdf_text", return_value="A long-\nterm study.\f"),
+        patch("src.main.configure_logging"),
+    ):
+        assert main(["extract", "paper.pdf", "-o", str(out)]) == 0
+    assert "A long-term study." in out.read_text(encoding="utf-8")
+
+
+def test_extract_warns_and_continues_on_malformed_glossary(tmp_path, caplog):
+    root = tmp_path / "repo"
+    root.mkdir()
+    _write(root / "glossary.json", '{"not": "a list"}')
+    out = tmp_path / "paper_en.txt"
+
+    with (
+        patch("src.main.PROJECT_ROOT", root),
+        patch("src.main.extract_pdf_text", return_value="A long-\nterm study.\f"),
+        patch("src.main.configure_logging"),
+    ):
+        assert main(["extract", "paper.pdf", "-o", str(out)]) == 0
+    assert "용어 파일 오류" in caplog.text
+    assert "A longterm study." in out.read_text(encoding="utf-8")
