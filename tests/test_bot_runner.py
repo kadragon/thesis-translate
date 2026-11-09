@@ -643,3 +643,32 @@ def test_shared_mode_runs_without_uid_switch(tmp_path):
     runner(JOB)
 
     assert "user" not in run.calls[0][1]
+
+
+def test_failed_copy_out_is_reported_and_workspace_discarded(tmp_path):
+    run = WritingRun(_claude_ok())
+    runner, notifier, iso = _iso_runner(tmp_path, run)
+
+    def broken(*_a):
+        raise OSError(28, "No space left on device")
+
+    iso.inner.collect = broken
+
+    runner(_iso_job(tmp_path))
+
+    assert notifier.documents == []
+    assert "No space left" in notifier.messages[-1][1]
+    assert not iso.spaces[0].root.exists()
+
+
+def test_kill_same_uid_strays_skips_zombies(tmp_path):
+    proc = _fake_proc(tmp_path, [(40, 10001)])
+    status = proc / "40" / "status"
+    status.write_text("Name:\tx\nState:\tZ (zombie)\n" + status.read_text())
+    killed: list[int] = []
+
+    count = kill_same_uid_strays(
+        proc_root=proc, self_pid=1, uid=10001, kill=lambda pid, _s: killed.append(pid)
+    )
+
+    assert (count, killed) == (0, [])

@@ -243,9 +243,13 @@ def kill_same_uid_strays(
             status = (entry / "status").read_text()
         except OSError:
             continue
-        uid_line = next((x for x in status.splitlines() if x.startswith("Uid:")), "")
+        lines = status.splitlines()
+        uid_line = next((x for x in lines if x.startswith("Uid:")), "")
         if uid_line.split()[1:2] != [str(uid)]:
             continue
+        state = next((x for x in lines if x.startswith("State:")), "")
+        if state.split()[1:2] == ["Z"]:
+            continue  # already dead; only its parent can reap it
         try:
             kill(int(entry.name), signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
@@ -339,7 +343,11 @@ class ClaudeRunner:
             report = self._translate(local, place, sweep)
             if report is None:
                 return
-            outputs = isolation.collect(space, job.stem)
+            try:
+                outputs = isolation.collect(space, job.stem)
+            except OSError as exc:
+                self._fail(job, f"번역 결과를 보관하지 못했습니다: {exc}")
+                return
             self._deliver(job, report, dataclasses.replace(place, cwd=outputs))
         finally:
             isolation.discard(space)

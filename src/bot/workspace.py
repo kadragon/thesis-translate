@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import stat
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -46,6 +47,9 @@ SHARED_TMP_DIRS = (Path("/tmp"), Path("/var/tmp"), Path("/dev/shm"))
 _JOB_ID = re.compile(r"^[\w-]+$")
 _COPY_CHUNK = 1024 * 1024
 _SWEEP_ROUNDS = 5
+_SWEEP_WAIT_SECONDS = 0.05
+# UIDs at or above first_uid and below this offset belong to jobs.
+_JOB_UID_SPAN = 1_000_000
 
 
 @dataclass(frozen=True)
@@ -95,6 +99,9 @@ class Isolation:
         self.jobs_dir.mkdir(parents=True, exist_ok=True)
         for entry in self.jobs_dir.iterdir():
             _remove(entry)
+        first = self._next_uid
+        for directory in self._shared_tmp:
+            _remove_owned(directory, lambda uid: first <= uid < first + _JOB_UID_SPAN)
 
     def prepare(self, job: Job) -> JobSpace:
         if not _JOB_ID.match(job.job_id):
@@ -104,6 +111,14 @@ class Isolation:
         self._next_uid += 1
         # The root stays root-owned (0755) so the job cannot swap work/home/tmp.
         space.root.mkdir(parents=True, mode=0o755)
+        try:
+            self._populate(space, job)
+        except BaseException:
+            _remove(space.root)
+            raise
+        return space
+
+    def _populate(self, space: JobSpace, job: Job) -> None:
         for directory in (space.work, space.home, space.tmp):
             directory.mkdir(mode=0o700)
         for name in LINKED_ENTRIES:
@@ -119,9 +134,9 @@ class Isolation:
         for directory in (space.work, space.home, space.tmp):
             self._own(space, directory)
         for dirpath, dirnames, filenames in os.walk(space.home / ".claude"):
+            self._own(space, Path(dirpath))
             for name in [*dirnames, *filenames]:
                 self._own(space, Path(dirpath) / name)
-        return space
 
     def child_env(self, space: JobSpace) -> dict[str, str]:
         """Per-job overrides for the child environment."""
@@ -134,11 +149,18 @@ class Isolation:
             "UV_CACHE_DIR": str(space.tmp / "uv-cache"),
         }
 
-    def sweep(self, space: JobSpace) -> None:
-        """Kill every process of the job UID (setsid'd leftovers included)."""
+    def sweep(self, space: JobSpace) -> bool:
+        """Kill every process of the job UID (setsid'd leftovers included).
+
+        Returns ``False`` (and logs) when processes still remain after the last
+        round; SIGKILL is asynchronous, so each round waits briefly.
+        """
         for _ in range(_SWEEP_ROUNDS):
             if not self._kill_strays(space.uid):
-                return
+                return True
+            time.sleep(_SWEEP_WAIT_SECONDS)
+        logger.error("작업 UID %d의 프로세스가 아직 남아 있습니다.", space.uid)
+        return False
 
     def collect(self, space: JobSpace, stem: str) -> Path:
         """Copy regular output files into root-owned ``outputs/<stem>/``.
@@ -148,26 +170,31 @@ class Isolation:
         at files it could not read itself.
         """
         dest = self.outputs_dir / stem
-        dest.mkdir(parents=True, exist_ok=True, mode=0o755)
+        dest_fd = _open_own_dir(dest)
         try:
-            work_fd = os.open(space.work, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
-        except OSError as exc:
-            logger.warning(
-                "작업 디렉터리를 열 수 없어 산출물을 복사하지 않습니다: %s", exc
-            )
-            return dest
-        try:
-            for suffix in OUTPUT_SUFFIXES:
-                _copy_regular(work_fd, f"{stem}{suffix}", dest)
+            try:
+                work_fd = os.open(
+                    space.work, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+                )
+            except OSError as exc:
+                logger.warning(
+                    "작업 디렉터리를 열 수 없어 산출물을 복사하지 않습니다: %s", exc
+                )
+                return dest
+            try:
+                for suffix in OUTPUT_SUFFIXES:
+                    _copy_regular(work_fd, f"{stem}{suffix}", dest_fd)
+            finally:
+                os.close(work_fd)
         finally:
-            os.close(work_fd)
+            os.close(dest_fd)
         return dest
 
     def discard(self, space: JobSpace) -> None:
         """Sweep the UID, remove its files in shared tmp dirs, delete the job root."""
         self.sweep(space)
         for directory in self._shared_tmp:
-            _remove_owned(directory, space.uid)
+            _remove_owned(directory, lambda uid: uid == space.uid)
         _remove(space.root)
 
     def _own(self, space: JobSpace, path: Path) -> None:
@@ -178,7 +205,24 @@ def _kill_uid(uid: int) -> int:
     return kill_same_uid_strays(uid=uid)
 
 
-def _copy_regular(work_fd: int, name: str, dest: Path) -> None:
+def _open_own_dir(path: Path) -> int:
+    """Create ``path`` if needed and open it, refusing symlinks and foreign owners."""
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
+    with contextlib.suppress(FileExistsError):
+        path.mkdir(mode=0o755)
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except OSError as exc:
+        msg = f"outputs dir {path} is not a plain directory: {exc}"
+        raise OSError(exc.errno, msg) from exc
+    if os.fstat(fd).st_uid != os.geteuid():
+        os.close(fd)
+        msg = f"outputs dir {path} is not owned by the bot"
+        raise OSError(msg)
+    return fd
+
+
+def _copy_regular(work_fd: int, name: str, dest_fd: int) -> None:
     try:
         src_fd = os.open(
             name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=work_fd
@@ -195,10 +239,19 @@ def _copy_regular(work_fd: int, name: str, dest: Path) -> None:
                 "산출물 %s이(가) 일반 파일이 아니거나 너무 커서 건너뜁니다.", name
             )
             return
-        target = dest / name
-        with target.open("wb") as out:
+        try:
+            out_fd = os.open(
+                name,
+                os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+                0o644,
+                dir_fd=dest_fd,
+            )
+        except OSError as exc:
+            logger.warning("산출물 %s을(를) outputs에 쓸 수 없습니다: %s", name, exc)
+            return
+        with os.fdopen(out_fd, "wb") as out:
+            os.fchmod(out.fileno(), 0o644)
             shutil.copyfileobj(src, out, _COPY_CHUNK)
-        target.chmod(0o644)
 
 
 def _remove(path: Path) -> None:
@@ -208,8 +261,8 @@ def _remove(path: Path) -> None:
         shutil.rmtree(path)
 
 
-def _remove_owned(directory: Path, uid: int) -> None:
-    """Delete entries owned by ``uid`` anywhere under ``directory``."""
+def _remove_owned(directory: Path, owned: Callable[[int], bool]) -> None:
+    """Delete entries whose owner UID matches ``owned`` anywhere under ``directory``."""
     try:
         entries = list(os.scandir(directory))
     except OSError:
@@ -217,7 +270,7 @@ def _remove_owned(directory: Path, uid: int) -> None:
     for entry in entries:
         with contextlib.suppress(OSError):
             path = Path(entry.path)
-            if entry.stat(follow_symlinks=False).st_uid == uid:
+            if owned(entry.stat(follow_symlinks=False).st_uid):
                 _remove(path)
             elif entry.is_dir(follow_symlinks=False):
-                _remove_owned(path, uid)
+                _remove_owned(path, owned)

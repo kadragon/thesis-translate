@@ -83,6 +83,7 @@ def test_prepare_links_app_entries_copies_pdf_and_seeds_home(tmp_path):
     assert (space.home / ".claude" / "settings.json").read_text() == "{}"
     owned = {path for path, uid, gid in rec.chowns if uid == gid == space.uid}
     assert {space.work, space.home, space.tmp, pdf} <= owned
+    assert space.home / ".claude" in owned
     assert space.home / ".claude" / "settings.json" in owned
     # The job root stays ours so the job cannot swap its own subdirectories.
     assert space.root not in owned
@@ -218,3 +219,77 @@ def test_prepare_rejects_job_ids_that_are_not_a_single_name(tmp_path, job_id):
 
     with pytest.raises(ValueError, match="job id"):
         iso.prepare(_job(tmp_path, job_id))
+
+
+def test_collect_never_follows_a_planted_symlink_in_outputs(tmp_path):
+    iso, _ = _isolation(tmp_path)
+    space = iso.prepare(_job(tmp_path))
+    _outputs(space)
+    victim = tmp_path / "victim"
+    victim.write_text("keep", encoding="utf-8")
+    dest = tmp_path / "app" / "outputs" / "Lacy 2022"
+    dest.mkdir(parents=True)
+    (dest / "Lacy 2022_ko.txt").symlink_to(victim)
+
+    iso.collect(space, "Lacy 2022")
+
+    assert victim.read_text(encoding="utf-8") == "keep"
+
+
+def test_collect_refuses_an_outputs_dir_that_is_a_symlink(tmp_path):
+    iso, _ = _isolation(tmp_path)
+    space = iso.prepare(_job(tmp_path))
+    _outputs(space)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (tmp_path / "app" / "outputs").mkdir(parents=True)
+    (tmp_path / "app" / "outputs" / "Lacy 2022").symlink_to(elsewhere)
+
+    with pytest.raises(OSError, match="outputs"):
+        iso.collect(space, "Lacy 2022")
+    assert list(elsewhere.iterdir()) == []
+
+
+def test_prepare_removes_a_partial_workspace_on_failure(tmp_path):
+    iso, _ = _isolation(tmp_path)
+    job = _job(tmp_path)
+    job.pdf_path.unlink()
+
+    with pytest.raises(OSError):
+        iso.prepare(job)
+    assert not (tmp_path / "jobs" / "j1").exists()
+
+
+def test_reset_removes_shared_tmp_files_of_any_job_uid(tmp_path):
+    shared = tmp_path / "shared-tmp"
+    shared.mkdir()
+    (shared / "planted").write_text("x", encoding="utf-8")
+    rec = Recorder()
+    app = tmp_path / "app"
+    app.mkdir()
+    iso = Isolation(
+        app_dir=app,
+        jobs_dir=tmp_path / "jobs",
+        outputs_dir=app / "outputs",
+        home_template=tmp_path / "none",
+        # Our own uid stands in for a job uid left over from before a restart.
+        first_uid=os.getuid(),
+        chown=rec.chown,
+        kill_strays=rec.kill_strays,
+        shared_tmp=(shared,),
+    )
+
+    iso.reset()
+
+    assert list(shared.iterdir()) == []
+
+
+def test_sweep_waits_between_rounds_and_logs_survivors(tmp_path, caplog):
+    rounds: list[int] = []
+    iso, _ = _isolation(tmp_path)
+    iso._kill_strays = lambda uid: rounds.append(uid) or 1
+    space = iso.prepare(_job(tmp_path))
+
+    assert iso.sweep(space) is False
+    assert len(rounds) > 1
+    assert "남아" in caplog.text
