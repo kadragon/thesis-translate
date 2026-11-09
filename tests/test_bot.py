@@ -14,7 +14,12 @@ from src.bot.handler import (
     TOO_LARGE,
     handle_update,
 )
-from src.bot.main import POLL_TIMEOUT_SECONDS, poll_once
+from src.bot.main import (
+    POLL_TIMEOUT_SECONDS,
+    PR_SET_DUMPABLE,
+    disable_dumpable,
+    poll_once,
+)
 from src.bot.main import main as bot_main
 from src.bot.telegram_api import TelegramClient
 
@@ -266,3 +271,36 @@ def test_client_send_document_uploads_multipart(tmp_path):
     assert 'filename="논문_ko.txt"'.encode() in body
     assert b'name="chat_id"\r\n\r\n111\r\n' in body
     assert "번역본".encode() in body
+
+
+class FakeLibc:
+    def __init__(self, result=0):
+        self.result = result
+        self.calls: list[tuple[int, ...]] = []
+
+    def prctl(self, *args):
+        self.calls.append(args)
+        return self.result
+
+
+def test_disable_dumpable_calls_prctl_on_linux():
+    libc = FakeLibc()
+
+    assert disable_dumpable("linux", lambda: libc) is True
+    assert libc.calls == [(PR_SET_DUMPABLE, 0, 0, 0, 0)]
+
+
+def test_disable_dumpable_is_noop_elsewhere():
+    assert disable_dumpable("darwin", FakeLibc) is False
+
+
+def test_disable_dumpable_raises_when_prctl_fails():
+    with pytest.raises(OSError, match="prctl"):
+        disable_dumpable("linux", lambda: FakeLibc(result=-1))
+
+
+def test_main_refuses_to_start_when_hardening_fails():
+    env = {"TELEGRAM_BOT_TOKEN": "t0k", "TELEGRAM_ALLOWED_CHAT_IDS": "111"}
+
+    with patch("src.bot.main.disable_dumpable", side_effect=OSError("prctl")):
+        assert bot_main(env) == 1

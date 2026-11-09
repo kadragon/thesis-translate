@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import os
+import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
@@ -17,7 +19,7 @@ from src.bot.telegram_api import TelegramClient
 from src.utils.rich_logging import configure_logging
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
     from collections.abc import Set as AbstractSet
 
     from src.bot.config import BotConfig
@@ -27,6 +29,28 @@ logger = logging.getLogger(__name__)
 
 POLL_TIMEOUT_SECONDS = 30
 RETRY_DELAY_SECONDS = 5
+PR_SET_DUMPABLE = 4
+
+
+def _libc() -> Any:  # pragma: no cover - real libc, Linux only
+    return ctypes.CDLL(None, use_errno=True)
+
+
+def disable_dumpable(
+    platform: str = sys.platform, load_libc: Callable[[], Any] = _libc
+) -> bool:
+    """Make ``/proc/<pid>/environ`` and memory unreadable to same-UID processes.
+
+    The ``claude`` child runs as the same user and may execute Python, so
+    without this it could read ``TELEGRAM_BOT_TOKEN`` from the bot's environ.
+    Returns ``False`` where ``prctl`` does not exist (macOS dev runs).
+    """
+    if not platform.startswith("linux"):
+        return False
+    if load_libc().prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
+        msg = f"prctl(PR_SET_DUMPABLE) failed: errno {ctypes.get_errno()}"
+        raise OSError(msg)
+    return True
 
 
 class Client(Protocol):
@@ -55,6 +79,11 @@ def main(env: Mapping[str, str] | None = None) -> int:
         config = load_config(os.environ if env is None else env)
     except ConfigError as exc:
         logger.error("%s", exc)  # noqa: TRY400
+        return 1
+    try:
+        disable_dumpable()
+    except OSError as exc:
+        logger.error("프로세스 보호(prctl) 설정 실패로 시작하지 않습니다: %s", exc)  # noqa: TRY400
         return 1
     _serve(config)  # pragma: no cover - network loop
     return 0  # pragma: no cover

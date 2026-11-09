@@ -65,6 +65,16 @@ What the image guarantees (verified with `docker run … bash`):
   `Bash(python…)` entries in the tool allowlist.
 - `.env` is never in the image (`.dockerignore`); secrets arrive via `--env-file`, and the
   runner passes only `CHILD_ENV_KEYS` to `claude`.
+- The bot is PID 1 (`CMD` runs the venv entry point, no `uv run` parent) and calls
+  `prctl(PR_SET_DUMPABLE, 0)` at startup, so the same-UID `claude` child cannot read
+  `/proc/1/environ` (the token). `docker exec` shells inherit the container env, so do not
+  judge this from an exec shell's own `/proc/self/environ`.
+- Workdir steering files are neutralized: root-owned `CLAUDE.local.md` and
+  `.python-version`, `UV_NO_CONFIG=1` (ignores `uv.toml`), `--strict-mcp-config` (ignores
+  `.mcp.json`), and `verify` runs with `python -P` (a dropped `json.py` cannot shadow stdlib).
+
+Residual risk (backlog): jobs share `/app` and `/home/bot`, so a PDF that escapes through
+Python could alter later jobs' outputs or `~/.claude` until the container is recreated.
 - Claude Code version is pinned (`CLAUDE_CODE_VERSION` build arg); the `prod@kadragon`
   plugin (kr-style) is installed for `bot`.
 

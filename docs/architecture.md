@@ -54,8 +54,10 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
   acceptable only inside the container. `DISALLOWED_TOOLS` also denies Edit/Write on
   `PROTECTED_PATHS` (code, tests, harness, `glossary.json`, `.env`) and `Read(./.env)`;
   deny beats allow. The child env is the `CHILD_ENV_KEYS` allowlist (no `TELEGRAM_*`).
-  Residual risk: Python can bypass path denies — the container setup in `docs/runbook.md`
-  is what contains it.
+  Also `--strict-mcp-config`; `verify` runs as `python -P`. The bot process is
+  non-dumpable (`disable_dumpable`, `prctl`) so the same-UID child cannot read its
+  environ. Residual risk: Python can bypass path denies — the container setup in
+  `docs/runbook.md` is what contains it.
   Timeout 4 h. The log line counts `permission_denials`: a non-zero count means the allowlist
   blocked a skill step.
 - **Stem**: `sanitize_stem` keeps the base name only, maps unsafe characters to `_`, strips

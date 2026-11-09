@@ -10,6 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     UV_NO_SYNC=1 \
     UV_FROZEN=1 \
+    UV_NO_CONFIG=1 \
     PATH=/home/bot/.local/bin:$PATH
 
 RUN apt-get update \
@@ -33,8 +34,14 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-install-project
 COPY . .
-RUN uv sync --frozen && chmod 1777 /app
+# Root-owned placeholders: files claude/uv would read from the workdir must not
+# be creatable by one job to steer the next.
+RUN uv sync --frozen \
+ && touch CLAUDE.local.md && echo 3.12 > .python-version \
+ && chmod 1777 /app
 
 USER bot
 ENV UV_CACHE_DIR=/home/bot/.cache/uv
-CMD ["uv", "run", "thesis-translate-bot"]
+# Exec the venv entry point directly: a `uv run` parent would stay alive holding
+# the bot token in its own (dumpable) environ.
+CMD ["/app/.venv/bin/thesis-translate-bot"]

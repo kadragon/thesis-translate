@@ -68,6 +68,11 @@ def test_argv_is_headless_with_dont_ask_and_json_output():
     assert argv[argv.index("--output-format") + 1] == "json"
 
 
+def test_argv_ignores_project_mcp_servers():
+    # A job could drop a .mcp.json into the shared workdir for the next job.
+    assert "--strict-mcp-config" in build_claude_argv()
+
+
 def test_argv_never_bypasses_permissions():
     joined = " ".join(build_claude_argv())
 
@@ -161,6 +166,7 @@ def test_child_env_is_an_allowlist_without_bot_or_other_secrets(tmp_path):
         "PATH": "/usr/bin",
         "HOME": "/home/bot",
         "UV_NO_SYNC": "1",
+        "UV_NO_CONFIG": "1",
     }
     runner, _ = _runner(tmp_path, run, env)
 
@@ -171,6 +177,7 @@ def test_child_env_is_an_allowlist_without_bot_or_other_secrets(tmp_path):
         "PATH": "/usr/bin",
         "HOME": "/home/bot",
         "UV_NO_SYNC": "1",
+        "UV_NO_CONFIG": "1",
     }
 
 
@@ -247,6 +254,8 @@ def test_verified_translation_is_sent_as_document_then_report(tmp_path):
 
     argv, kwargs = run.calls[1]
     assert argv[-3:] == ["verify", "Lacy 2022_en.txt", "Lacy 2022_ko.txt"]
+    # -P: a model-written json.py in the workdir must not shadow the stdlib.
+    assert argv[1:4] == ["-P", "-m", "src.main"]
     assert kwargs["cwd"] == tmp_path
     assert notifier.documents == [(OWNER, ko, "Lacy 2022.pdf 번역본")]
     assert notifier.messages[-1] == (OWNER, "보고: 10쪽")

@@ -79,6 +79,7 @@ CHILD_ENV_KEYS = (
     "CLAUDE_CONFIG_DIR",
     "UV_CACHE_DIR",
     "UV_NO_SYNC",
+    "UV_NO_CONFIG",
     "UV_FROZEN",
     "XDG_CACHE_HOME",
     "XDG_CONFIG_HOME",
@@ -127,6 +128,7 @@ def build_claude_argv() -> list[str]:
         "--permission-mode",
         "dontAsk",
         "--no-session-persistence",
+        "--strict-mcp-config",
         "--allowedTools",
         *ALLOWED_TOOLS,
         "--disallowedTools",
@@ -224,7 +226,7 @@ class ClaudeRunner:
             return
         try:
             verify = self._run(
-                [sys.executable, "-m", "src.main", "verify", source, target],
+                [sys.executable, "-P", "-m", "src.main", "verify", source, target],
                 cwd=self._workdir,
                 capture_output=True,
                 text=True,
