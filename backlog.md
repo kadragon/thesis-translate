@@ -2,8 +2,5 @@
 
 ## Review Backlog
 
-### feat/per-job-isolation-runner — implementation finding (2026-11-09)
-- [ ] [debt] `run_in_group` blocks after a timeout until any `setsid`'d descendant that still holds the stdout/stderr pipe exits, so a hostile job can stall the single worker indefinitely; sweep the job UID (or close the pipes) before the second `communicate()` (source: container check during implementation) — src/bot/runner.py:195
-
-### PR #102 — per-job isolation image (2026-11-09)
-- [ ] [debt] `Isolation._populate` skips the HOME template silently when `/opt/claude-home/.claude` is missing, so a broken image runs every job without the prod plugin (no kr-style step); fail `build_isolation` at startup instead (source: code-review) — src/bot/workspace.py:126, src/bot/main.py:36
+### PR #103 — bot job hardening (2026-11-09)
+- [ ] [doc] Non-root mode no longer blocks after a job timeout, so a `setsid`'d leftover of a timed-out job can keep writing in the shared workdir while the next job runs (`_sweep_strays` only acts as PID 1); state in the runbook and startup warning that non-root mode does no stray cleanup between jobs (source: code-review) — src/bot/runner.py:205, src/bot/main.py:70

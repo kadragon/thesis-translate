@@ -59,6 +59,8 @@ Updates (newest first, keep ~5).
 
 ## Updates
 
+- 2026-11-09: In root mode the bot refuses to start without `/opt/claude-home/.claude`;
+  a job timeout no longer waits on `setsid`'d descendants holding the output pipes.
 - 2026-11-09: The image runs the bot as root, so every container job is isolated; `claude`
   lives in `/opt/claude/bin`, the HOME template in `/opt/claude-home`, outputs in
   `/app/outputs/<stem>/` (runbook has the manual check).
@@ -71,5 +73,3 @@ Updates (newest first, keep ~5).
   chats, PDF intake to `inbox/`, single-worker queue, headless `claude -p` with a tool
   allowlist and protected-path denies, `verify` gate before `sendDocument`. Harness set up
   (`docs/`, golden principles, ruff ban on LLM SDKs); OpenAI-era archive sections removed.
-- 2026-11-08: `verify` also warns on missing source numbers, `Figure/Table N` without
-  `그림/표 N`, and term-table violations; `extract` refuses scans; new `dual` command.

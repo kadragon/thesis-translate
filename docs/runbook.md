@@ -63,7 +63,8 @@ What the image guarantees:
   bot process; a restart starts at 20000 again after deleting leftover `/jobs/*` and job-UID
   files in shared tmp dirs) and `/jobs/<id>/{work,home,tmp}` (`src/bot/workspace.py`). The
   workdir links read-only into `/app`; HOME is a copy of the root-owned template `/opt/claude-home/.claude` (settings and
-  the `prod@kadragon` plugin for kr-style); `claude` lives in root-owned `/opt/claude/bin`.
+  the `prod@kadragon` plugin for kr-style; the bot exits 1 at startup when it is missing);
+  `claude` lives in root-owned `/opt/claude/bin`.
 - `/app`, `.venv`, `inbox/`, and `outputs/` are root-owned 0755. After a job, the bot kills
   every process of its UID, deletes that UID's files in `/tmp`, `/var/tmp`, `/dev/shm`,
   copies regular `<stem>_*` files (no symlinks) to root-owned `/app/outputs/<stem>/`, and
