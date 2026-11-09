@@ -304,3 +304,36 @@ def test_main_refuses_to_start_when_hardening_fails():
 
     with patch("src.bot.main.disable_dumpable", side_effect=OSError("prctl")):
         assert bot_main(env) == 1
+
+
+def test_poll_once_survives_a_failing_update_and_still_advances():
+    class BoomIntake(FakeIntake):
+        def accept(self, chat_id, document):
+            if document["file_name"] == "boom.pdf":
+                raise KeyError(document["file_name"])
+            return super().accept(chat_id, document)
+
+    client = FakeClient(
+        [_doc_update(OWNER, 5, file_name="boom.pdf"), _doc_update(OWNER, 6)]
+    )
+    intake = BoomIntake()
+
+    offset = poll_once(client, ALLOWED, intake, offset=None)
+
+    assert offset == 6 + 1
+    assert len(intake.accepted) == 1
+
+
+BLOCKED = "403 Forbidden: bot was blocked by the user"
+
+
+def test_poll_once_advances_even_when_reply_fails():
+    class FailingSend(FakeClient):
+        def send_message(self, _chat_id, _text):
+            raise OSError(BLOCKED)
+
+    client = FailingSend([_doc_update(OWNER, 9)])
+    intake = FakeIntake()
+
+    assert poll_once(client, ALLOWED, intake, offset=None) == 9 + 1
+    assert len(intake.accepted) == 1

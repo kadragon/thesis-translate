@@ -1,5 +1,6 @@
 """Tests for PDF intake (download, stem, collisions) and the single-worker queue."""
 
+import http.client
 import threading
 from pathlib import Path
 
@@ -68,7 +69,7 @@ def _doc(name="Lacy 2022.pdf"):
         ("논문 제목.pdf", "논문 제목"),
         (".pdf", "paper"),
         ("", "paper"),
-        ("x" * 300 + ".pdf", "x" * 120),
+        ("x" * 300 + ".pdf", "x" * 150),
     ],
 )
 def test_sanitize_stem(file_name, stem):
@@ -202,3 +203,24 @@ def test_default_job_ids_are_short_and_unique(tmp_path):
     ids = [job.job_id for job in queue.pending()]
     assert len(set(ids)) == len(ids)
     assert all(len(job_id) == len("0123abcd") for job_id in ids)
+
+
+def test_stem_fits_filename_byte_limit_with_suffixes():
+    stem = sanitize_stem("가" * 300 + ".pdf")
+
+    assert len(f"{stem}_j1234567_terms.json".encode()) <= 255  # noqa: PLR2004
+
+
+def test_truncation_never_splits_a_utf8_character():
+    stem = sanitize_stem("a" + "가" * 200 + ".pdf")
+
+    stem.encode("utf-8")  # would fail on a broken surrogate
+    assert stem.startswith("a가")
+
+
+def test_incomplete_read_is_a_download_failure(tmp_path):
+    error = http.client.IncompleteRead(b"%PDF-", 1000)
+    intake, queue = _intake(tmp_path, FakeDownloader(error=error))
+
+    assert intake.accept(OWNER, _doc()) == DOWNLOAD_FAILED
+    assert queue.pending() == []

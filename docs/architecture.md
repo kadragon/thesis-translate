@@ -38,6 +38,8 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
 ```
 
 - **Transport**: long polling (`getUpdates`); no public endpoint or webhook needed.
+  `poll_once` advances the offset before handling each update and logs per-update
+  errors, so a failing update is never replayed (a replay would queue the PDF again).
 - **Access**: drop any update whose chat ID is not in `TELEGRAM_ALLOWED_CHAT_IDS` before
   downloading anything (golden principle 2).
 - **Input**: accept `application/pdf` documents only. Bot API downloads cap at 20 MB; reply
@@ -58,6 +60,11 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
   non-dumpable (`disable_dumpable`, `prctl`) so the same-UID child cannot read its
   environ. Residual risk: Python can bypass path denies — the container setup in
   `docs/runbook.md` is what contains it.
+  Claude runs via `run_in_group` (new session); its whole process group is killed and
+  reaped after it exits or times out, so no tool subprocess outlives the job. Every text
+  sent to Telegram goes through `ClaudeRunner._redact` (`SECRET_ENV_KEYS` values and
+  `sk-ant-…` tokens). Notifier failures are logged; a failed upload falls back to a text
+  message naming the server-side file.
   Timeout 4 h. The log line counts `permission_denials`: a non-zero count means the allowlist
   blocked a skill step.
 - **Stem**: `sanitize_stem` keeps the base name only, maps unsafe characters to `_`, strips

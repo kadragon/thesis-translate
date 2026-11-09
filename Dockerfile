@@ -38,6 +38,7 @@ COPY . .
 # be creatable by one job to steer the next.
 RUN uv sync --frozen \
  && touch CLAUDE.local.md && echo 3.12 > .python-version \
+ && { [ -f glossary.json ] || echo '[]' > glossary.json; } \
  && chmod 1777 /app
 
 USER bot

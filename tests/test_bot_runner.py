@@ -1,7 +1,10 @@
 """Tests for the headless ``claude -p`` job runner."""
 
 import json
+import os
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -13,6 +16,7 @@ from src.bot.runner import (
     ClaudeRunner,
     build_claude_argv,
     build_prompt,
+    run_in_group,
 )
 
 OWNER = 111
@@ -306,3 +310,121 @@ def test_verify_that_cannot_run_is_reported(tmp_path):
 
     assert notifier.documents == []
     assert "verify" in notifier.messages[-1][1]
+
+
+# --- review fixes (PR #99) --------------------------------------------------
+
+
+def test_report_and_failure_text_never_carry_secrets(tmp_path):
+    _write_outputs(tmp_path)
+    leaked = "보고 oauth-secret-123 sk-ant-oat01-AbC_d-9 끝"
+    run = FakeRun(_claude_ok(leaked), _verify(0))
+    env = {
+        "CLAUDE_CODE_OAUTH_TOKEN": "oauth-secret-123",
+        "TELEGRAM_BOT_TOKEN": "tg-tok",
+    }
+    runner, notifier = _runner(tmp_path, run, env)
+
+    runner(JOB)
+
+    text = notifier.messages[-1][1]
+    assert "oauth-secret-123" not in text
+    assert "sk-ant-oat01" not in text
+    assert "보고" in text
+
+
+def test_failure_stderr_is_redacted(tmp_path):
+    run = FakeRun(subprocess.CompletedProcess([], 1, stdout="", stderr="tg-tok leaked"))
+    runner, notifier = _runner(tmp_path, run, {"TELEGRAM_BOT_TOKEN": "tg-tok"})
+
+    runner(JOB)
+
+    assert "tg-tok" not in notifier.messages[-1][1]
+
+
+BLIP = "network blip"
+TOO_LARGE_UPLOAD = "Telegram sendDocument 실패: Request Entity Too Large"
+
+
+class FlakyNotifier(FakeNotifier):
+    def __init__(self, fail_first_message=False, fail_document=False):
+        super().__init__()
+        self.fail_first_message = fail_first_message
+        self.fail_document = fail_document
+
+    def send_message(self, chat_id, text):
+        if self.fail_first_message:
+            self.fail_first_message = False
+            raise OSError(BLIP)
+        super().send_message(chat_id, text)
+
+    def send_document(self, chat_id, path, caption):
+        if self.fail_document:
+            raise RuntimeError(TOO_LARGE_UPLOAD)
+        super().send_document(chat_id, path, caption)
+
+
+def test_failed_start_message_does_not_drop_the_job(tmp_path):
+    _write_outputs(tmp_path)
+    run = FakeRun(_claude_ok(), _verify(0))
+    notifier = FlakyNotifier(fail_first_message=True)
+    runner = ClaudeRunner(notifier, workdir=tmp_path, run=run, env={})
+
+    runner(JOB)
+
+    assert [argv[0] for argv, _ in run.calls] == ["claude", sys.executable]
+    assert len(notifier.documents) == 1
+
+
+def test_failed_upload_tells_the_user_where_the_file_is(tmp_path):
+    _write_outputs(tmp_path)
+    run = FakeRun(_claude_ok(), _verify(0))
+    notifier = FlakyNotifier(fail_document=True)
+    runner = ClaudeRunner(notifier, workdir=tmp_path, run=run, env={})
+
+    runner(JOB)
+
+    last = notifier.messages[-1][1]
+    assert "보내지 못했습니다" in last
+    assert "Lacy 2022_ko.txt" in last
+
+
+@pytest.mark.parametrize(
+    "rule",
+    [
+        "Write(./.agents/**)",
+        "Write(./CLAUDE.local.md)",
+        "Edit(./README.md)",
+        "Write(./Dockerfile)",
+        "Edit(./backlog.md)",
+        "Write(./.python-version)",
+    ],
+)
+def test_files_that_steer_later_runs_are_denied(rule):
+    argv = build_claude_argv()
+
+    assert rule in argv[argv.index("--disallowedTools") + 1 :]
+
+
+def test_run_in_group_kills_grandchildren_on_timeout(tmp_path):
+    pid_file = tmp_path / "pid"
+    script = f"sleep 30 & echo $! > '{pid_file}'; wait"
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        run_in_group(["sh", "-c", script], input="", timeout=1)
+
+    grandchild = int(pid_file.read_text())
+    for _ in range(50):
+        try:
+            os.kill(grandchild, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail("grandchild still alive")
+
+
+def test_run_in_group_returns_output_and_code():
+    proc = run_in_group(["sh", "-c", "cat; exit 3"], input="hi", timeout=5)
+
+    assert (proc.returncode, proc.stdout) == (3, "hi")

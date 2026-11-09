@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import logging
 import os
+import signal
 import sys
 import time
 from pathlib import Path
@@ -67,8 +69,13 @@ def poll_once(
 ) -> int | None:
     """Fetch one batch, handle each update, and return the next offset."""
     for update in client.get_updates(offset, POLL_TIMEOUT_SECONDS):
+        # Advance first: a failing update is logged and skipped, never replayed
+        # (a replay would queue the same PDF again).
         offset = update["update_id"] + 1
-        handle_update(update, allowed, client, intake)
+        try:
+            handle_update(update, allowed, client, intake)
+        except Exception:
+            logger.exception("업데이트 %s 처리 실패", update.get("update_id"))
     return offset
 
 
@@ -89,6 +96,10 @@ def main(env: Mapping[str, str] | None = None) -> int:
     return 0  # pragma: no cover
 
 
+def _raise_keyboard_interrupt(*_: object) -> None:  # pragma: no cover
+    raise KeyboardInterrupt
+
+
 def _serve(config: BotConfig) -> None:  # pragma: no cover - network loop
     """Wire client, queue, runner, and intake; poll until Ctrl+C."""
     client = TelegramClient(config.token)
@@ -96,18 +107,21 @@ def _serve(config: BotConfig) -> None:  # pragma: no cover - network loop
     queue = JobQueue(runner=ClaudeRunner(client, workdir=workdir))
     intake = Intake(client, queue, inbox=workdir / "inbox", workdir=workdir)
     queue.start()
+    # As PID 1 the default SIGTERM action is ignored; stop cleanly on docker stop.
+    signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)
     logger.info("봇을 시작합니다. 허용 채팅 %d개", len(config.allowed_chat_ids))
     offset: int | None = None
-    while True:
-        try:
-            offset = poll_once(client, config.allowed_chat_ids, intake, offset)
-        except KeyboardInterrupt:
-            return
-        except (OSError, RuntimeError, ValueError) as exc:
-            logger.warning(
-                "업데이트 수신 실패, %d초 후 재시도: %s", RETRY_DELAY_SECONDS, exc
-            )
-            time.sleep(RETRY_DELAY_SECONDS)
+    # SIGTERM may land anywhere, including the retry sleep; stop cleanly either way.
+    with contextlib.suppress(KeyboardInterrupt):
+        while True:
+            try:
+                offset = poll_once(client, config.allowed_chat_ids, intake, offset)
+            except Exception as exc:
+                logger.warning(
+                    "업데이트 수신 실패, %d초 후 재시도: %s", RETRY_DELAY_SECONDS, exc
+                )
+                time.sleep(RETRY_DELAY_SECONDS)
+    logger.info("봇을 종료합니다.")
 
 
 if __name__ == "__main__":  # pragma: no cover

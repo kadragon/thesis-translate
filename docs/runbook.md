@@ -69,8 +69,10 @@ What the image guarantees (verified with `docker run … bash`):
   `prctl(PR_SET_DUMPABLE, 0)` at startup, so the same-UID `claude` child cannot read
   `/proc/1/environ` (the token). `docker exec` shells inherit the container env, so do not
   judge this from an exec shell's own `/proc/self/environ`.
-- Workdir steering files are neutralized: root-owned `CLAUDE.local.md` and
-  `.python-version`, `UV_NO_CONFIG=1` (ignores `uv.toml`), `--strict-mcp-config` (ignores
+- `docker stop` exits cleanly: the bot handles SIGTERM itself (no tini — an init process
+  would hold the token in a readable environ) and reaps each job's process group.
+- Workdir steering files are neutralized: root-owned `CLAUDE.local.md`, `.python-version`,
+  and `glossary.json` (`[]` when the host has none), `UV_NO_CONFIG=1` (ignores `uv.toml`), `--strict-mcp-config` (ignores
   `.mcp.json`), and `verify` runs with `python -P` (a dropped `json.py` cannot shadow stdlib).
 
 Residual risk (backlog): jobs share `/app` and `/home/bot`, so a PDF that escapes through

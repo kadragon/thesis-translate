@@ -6,11 +6,15 @@ Paper text is untrusted, so Claude runs with an explicit tool allowlist and
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
+import re
+import signal
 import subprocess
 import sys
+import time
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
@@ -58,6 +62,17 @@ PROTECTED_PATHS = (
     "uv.lock",
     "glossary.json",
     ".env",
+    # Files later runs (or a developer's session) would load as instructions.
+    ".agents/**",
+    "CLAUDE.local.md",
+    "README.md",
+    "backlog.md",
+    "Dockerfile",
+    ".dockerignore",
+    ".gitignore",
+    ".claudeignore",
+    ".pre-commit-config.yaml",
+    ".python-version",
 )
 DISALLOWED_TOOLS = (
     "WebFetch",
@@ -90,6 +105,13 @@ VERIFY_TIMEOUT_SECONDS = 5 * 60
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 # Telegram rejects messages over 4096 characters.
 MAX_MESSAGE_CHARS = 4000
+
+# Values that must never reach Telegram, even if a prompt-injected run prints them.
+SECRET_ENV_KEYS = ("CLAUDE_CODE_OAUTH_TOKEN", "TELEGRAM_BOT_TOKEN", "ANTHROPIC_API_KEY")
+_TOKEN_PATTERN = re.compile(r"sk-ant-[\w-]+")
+_REDACTED = "[비밀값 가림]"
+_REAP_ATTEMPTS = 20
+_REAP_INTERVAL_SECONDS = 0.05
 
 START = "{name} 번역을 시작합니다. 논문 길이에 따라 수십 분 이상 걸릴 수 있습니다."
 FAILED = "{name}을(를) 번역하지 못했습니다.\n\n{reason}"
@@ -136,6 +158,58 @@ def build_claude_argv() -> list[str]:
     ]
 
 
+def run_in_group(
+    argv: list[str],
+    *,
+    input: str,  # noqa: A002 - mirrors subprocess.run
+    timeout: float,
+    cwd: Path | None = None,
+    env: Mapping[str, str] | None = None,
+    **_: Any,
+) -> subprocess.CompletedProcess[str]:
+    """``subprocess.run`` in a new session; the whole group dies afterwards.
+
+    Claude's tool subprocesses (python3, uv, pdftotext) share its process group,
+    so a timeout or a finished run never leaves them writing into the workdir.
+    """
+    proc = subprocess.Popen(
+        argv,
+        cwd=cwd,
+        env=env,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        stdout, stderr = proc.communicate(input, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_group(proc.pid)
+        proc.communicate()
+        _reap_group(proc.pid)
+        raise
+    _kill_group(proc.pid)
+    _reap_group(proc.pid)
+    return subprocess.CompletedProcess(argv, proc.returncode, stdout, stderr)
+
+
+def _kill_group(pgid: int) -> None:
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.killpg(pgid, signal.SIGKILL)
+
+
+def _reap_group(pgid: int) -> None:
+    """Reap orphans re-parented to us (the bot is PID 1 in the container)."""
+    for _ in range(_REAP_ATTEMPTS):
+        try:
+            pid, _status = os.waitpid(-pgid, os.WNOHANG)
+        except ChildProcessError:
+            return
+        if pid == 0:
+            time.sleep(_REAP_INTERVAL_SECONDS)
+
+
 def _child_env(env: Mapping[str, str]) -> dict[str, str]:
     """Allowlisted variables only; the model never sees the Telegram token."""
     return {key: env[key] for key in CHILD_ENV_KEYS if key in env}
@@ -162,7 +236,7 @@ class ClaudeRunner:
         notifier: Notifier,
         *,
         workdir: Path,
-        run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+        run: Callable[..., subprocess.CompletedProcess[str]] = run_in_group,
         env: Mapping[str, str] | None = None,
     ) -> None:
         self._notifier = notifier
@@ -171,15 +245,30 @@ class ClaudeRunner:
         self._env = os.environ if env is None else env
 
     def __call__(self, job: Job) -> None:
-        self._notifier.send_message(job.chat_id, START.format(name=job.file_name))
+        self._send(job, START.format(name=job.file_name))
         report = self._translate(job)
         if report is not None:
             self._deliver(job, report)
 
+    def _redact(self, text: str) -> str:
+        """Golden principle 4: no secret reaches Telegram, whatever was printed."""
+        for key in SECRET_ENV_KEYS:
+            value = self._env.get(key, "")
+            if value:
+                text = text.replace(value, _REDACTED)
+        return _TOKEN_PATTERN.sub(_REDACTED, text)
+
+    def _send(self, job: Job, text: str) -> None:
+        """Best effort: a failed notice must not drop or abort the job."""
+        try:
+            self._notifier.send_message(job.chat_id, _clip(self._redact(text)))
+        except Exception:
+            logger.exception("작업 %s: 메시지 전송 실패", job.job_id)
+
     def _fail(self, job: Job, reason: str) -> None:
+        reason = self._redact(reason)
         logger.warning("작업 %s 실패: %s", job.job_id, reason[:200])
-        message = FAILED.format(name=job.file_name, reason=_clip(reason, 3500))
-        self._notifier.send_message(job.chat_id, message)
+        self._send(job, FAILED.format(name=job.file_name, reason=_clip(reason, 3500)))
 
     def _translate(self, job: Job) -> str | None:
         """Run Claude; return its final report, or ``None`` after reporting failure."""
@@ -252,8 +341,17 @@ class ClaudeRunner:
                 f"서버의 {target}을(를) 확인하세요.",
             )
             return
-        self._notifier.send_document(
-            job.chat_id, translation, f"{job.file_name} 번역본"
-        )
+        try:
+            self._notifier.send_document(
+                job.chat_id, translation, f"{job.file_name} 번역본"
+            )
+        except Exception as exc:
+            logger.exception("작업 %s: 번역본 전송 실패", job.job_id)
+            self._fail(
+                job,
+                f"번역은 끝났지만 번역본을 Telegram으로 보내지 못했습니다({exc}). "
+                f"서버의 {target}을(를) 확인하세요.",
+            )
+            return
         if report.strip():
-            self._notifier.send_message(job.chat_id, _clip(report))
+            self._send(job, report)

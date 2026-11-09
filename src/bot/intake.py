@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import http.client
 import logging
 import re
 from typing import TYPE_CHECKING, Any, Protocol
@@ -20,7 +21,9 @@ logger = logging.getLogger(__name__)
 DOWNLOAD_FAILED = "파일을 내려받지 못했습니다. 잠시 후 다시 보내 주세요."
 NOT_PDF_CONTENT = "PDF 형식이 아닌 파일입니다. 논문 PDF를 보내 주세요."
 
-MAX_STEM_LENGTH = 120
+# Bytes, not characters: leaves room for `_<job id>_terms.json` under the
+# 255-byte filename limit even for 3-byte Korean syllables.
+MAX_STEM_BYTES = 150
 # PDF readers accept the header anywhere in the first 1024 bytes.
 _PDF_HEADER = b"%PDF-"
 _HEADER_WINDOW = 1024
@@ -39,7 +42,8 @@ def sanitize_stem(file_name: str) -> str:
     name = re.split(r"[/\\]", file_name)[-1]
     if name.lower().endswith(".pdf"):
         name = name[: -len(".pdf")]
-    stem = _UNSAFE.sub("_", name).lstrip("-. ")[:MAX_STEM_LENGTH].rstrip(". ")
+    stem = _UNSAFE.sub("_", name).lstrip("-. ")
+    stem = stem.encode()[:MAX_STEM_BYTES].decode("utf-8", "ignore").rstrip(". ")
     return stem or _DEFAULT_STEM
 
 
@@ -75,7 +79,13 @@ class Intake:
         try:
             remote = self._downloader.get_file(document["file_id"])
             self._downloader.download_file(remote, pdf_path)
-        except (OSError, RuntimeError, ValueError, KeyError) as exc:
+        except (
+            OSError,
+            RuntimeError,
+            ValueError,
+            KeyError,
+            http.client.HTTPException,
+        ) as exc:
             logger.warning("다운로드 실패(%s): %s", file_name, exc)
             pdf_path.unlink(missing_ok=True)
             return DOWNLOAD_FAILED
