@@ -58,7 +58,9 @@ def _extract(args: argparse.Namespace) -> int:
         subprocess.CalledProcessError,
         ParseError,
     ) as exc:
-        logger.error("PDF 추출 실패: %s", exc)  # noqa: TRY400
+        # pdftotext's own message (encrypted, broken xref) says more than its exit code.
+        stderr = getattr(exc, "stderr", None)
+        logger.error("PDF 추출 실패: %s", stderr.strip() if stderr else exc)  # noqa: TRY400
         return 1
     pages = split_pages(raw)
     blank = sum(1 for page in pages if not page.strip())
@@ -177,7 +179,11 @@ def main(argv: list[str] | None = None) -> int:
     """Run the CLI and return the process exit code."""
     configure_logging()
     args = _parser().parse_args(argv)
-    code: int = args.handler(args)
+    try:
+        code: int = args.handler(args)
+    except FileNotFoundError as exc:
+        logger.error("파일을 찾을 수 없습니다: %s", exc.filename or exc)  # noqa: TRY400
+        return 1
     return code
 
 

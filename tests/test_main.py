@@ -5,6 +5,8 @@ import subprocess
 from unittest.mock import patch
 from xml.etree.ElementTree import ParseError
 
+import pytest
+
 from src.main import main
 from src.utils.rich_logging import configure_logging, get_console
 
@@ -199,3 +201,33 @@ def test_configure_logging_prints_brackets_literally():
         logging.getLogger("t").error("source [p.1, p.2], we use [i] and [b]")
 
     assert "[p.1, p.2], we use [i] and [b]" in capture.get()
+
+
+def test_extract_reports_pdftotext_stderr(tmp_path, caplog):
+    out = tmp_path / "in.txt"
+    error = subprocess.CalledProcessError(
+        1, ["pdftotext"], stderr="Syntax Error: Couldn't read xref table\n"
+    )
+    with (
+        patch("src.main.configure_logging"),
+        patch("src.main.extract_pdf_text", side_effect=error),
+    ):
+        assert main(["extract", "paper.pdf", "-o", str(out)]) == 1
+
+    assert "Couldn't read xref table" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["verify", "missing_en.txt", "missing_ko.txt"],
+        ["dual", "missing_en.txt", "missing_ko.txt"],
+        ["format", "missing_ko.txt"],
+    ],
+)
+def test_commands_report_missing_input_file(tmp_path, monkeypatch, caplog, command):
+    monkeypatch.chdir(tmp_path)
+
+    with patch("src.main.configure_logging"):
+        assert main(command) == 1
+    assert "missing_" in caplog.text
