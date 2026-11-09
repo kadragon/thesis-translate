@@ -97,7 +97,10 @@ Not configured: network egress limits. If the host allows it, restrict outbound 
 `api.anthropic.com`, `api.telegram.org`, and the Claude auth endpoints.
 
 Local run without Docker: start from the repo root so the skill finds `glossary.json` and
-`<stem>_*.txt` (the model then has your full user rights — prefer the container).
+`<stem>_*.txt` (the model then has your full user rights — prefer the container). Without
+root there is no per-job isolation, and unless the bot is PID 1 no stray cleanup between
+jobs either: a `setsid`'d leftover of a timed-out job can keep writing in the shared workdir
+while the next job runs.
 
 ## Environment Variables
 

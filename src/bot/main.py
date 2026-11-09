@@ -65,6 +65,7 @@ def build_isolation(
     euid: int | None = None,
     jobs_dir: Path = JOBS_DIR,
     home_template: Path = HOME_TEMPLATE,
+    pid: int | None = None,
 ) -> Isolation | None:
     """Per-job isolation when running as root (the container); else ``None``.
 
@@ -73,9 +74,15 @@ def build_isolation(
     """
     euid = os.geteuid() if euid is None else euid
     if euid != 0:
+        pid = os.getpid() if pid is None else pid
+        # Same condition as runner._sweep_strays: only PID 1 sweeps strays.
+        cleanup = (
+            "" if pid == 1 else " 작업이 끝난 뒤 남은 프로세스도 정리하지 않습니다."
+        )
         logger.warning(
             "root가 아니어서 작업별 격리 없이 실행합니다. 작업들이 같은 사용자와 "
-            "작업 디렉터리를 공유합니다."
+            "작업 디렉터리를 공유합니다.%s",
+            cleanup,
         )
         return None
     if not (home_template / ".claude").is_dir():
