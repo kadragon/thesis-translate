@@ -19,7 +19,8 @@
    `tests/test_bot.py::test_non_allowlisted_chat_gets_no_reply_and_no_download`.
 3. **Headless Claude runs with a tool allowlist.** Paper text is untrusted input. Never
    `--dangerously-skip-permissions` or `bypassPermissions`; no web tools in the allowlist.
-   Enforced: `tests/test_bot_runner.py` (argv, allowlist, child env without `TELEGRAM_*`).
+   Enforced: `tests/test_bot_runner.py` (argv, allowlist, protected-path denies, child env
+   allowlist).
 4. **Secrets come from the environment only.** `TELEGRAM_BOT_TOKEN`,
    `CLAUDE_CODE_OAUTH_TOKEN` live in `.env` (gitignored) or the host's secret store, never in
    code, logs, or Telegram replies. Enforced: `.gitignore`, `.claude/settings.json` deny.

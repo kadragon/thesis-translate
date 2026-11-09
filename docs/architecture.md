@@ -51,7 +51,11 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
   goes in on stdin (the variadic tool flags would swallow a positional prompt). `dontAsk`
   denies anything off the list. `ALLOWED_TOOLS` includes `Bash(uv run python:*)` and
   `Bash(python3:*)` for the skill's UTF-8 edits and the kr-style audit — arbitrary code,
-  acceptable only inside the container. `TELEGRAM_*` env vars are stripped from the child.
+  acceptable only inside the container. `DISALLOWED_TOOLS` also denies Edit/Write on
+  `PROTECTED_PATHS` (code, tests, harness, `glossary.json`, `.env`) and `Read(./.env)`;
+  deny beats allow. The child env is the `CHILD_ENV_KEYS` allowlist (no `TELEGRAM_*`).
+  Residual risk: Python can bypass path denies — the container setup in `docs/runbook.md`
+  is what contains it.
   Timeout 4 h. The log line counts `permission_denials`: a non-zero count means the allowlist
   blocked a skill step.
 - **Stem**: `sanitize_stem` keeps the base name only, maps unsafe characters to `_`, strips

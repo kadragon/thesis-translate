@@ -38,14 +38,52 @@ ALLOWED_TOOLS = (
     "Bash(uv run python:*)",
     "Bash(python3:*)",
 )
-DISALLOWED_TOOLS = ("WebFetch", "WebSearch")
+# Deny rules win over allow rules: keep the model off repo code, config, the
+# harness, and secrets. Python in ALLOWED_TOOLS can still bypass these, so the
+# container must mount the checkout read-only except the job outputs
+# (docs/runbook.md).
+PROTECTED_PATHS = (
+    "src/**",
+    "tests/**",
+    ".claude/**",
+    ".github/**",
+    ".git/**",
+    "docs/**",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "pyproject.toml",
+    "uv.lock",
+    "glossary.json",
+    ".env",
+)
+DISALLOWED_TOOLS = (
+    "WebFetch",
+    "WebSearch",
+    *(f"{tool}(./{path})" for path in PROTECTED_PATHS for tool in ("Edit", "Write")),
+    "Read(./.env)",
+)
+# Only what claude, uv, and pdftotext need; everything else (bot token, cloud
+# credentials) stays out of reach of the model.
+CHILD_ENV_KEYS = (
+    "PATH",
+    "HOME",
+    "USER",
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TMPDIR",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CONFIG_DIR",
+    "UV_CACHE_DIR",
+    "XDG_CACHE_HOME",
+    "XDG_CONFIG_HOME",
+)
 JOB_TIMEOUT_SECONDS = 4 * 60 * 60
 VERIFY_TIMEOUT_SECONDS = 5 * 60
 # Bot API sendDocument refuses files above 50 MB.
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 # Telegram rejects messages over 4096 characters.
 MAX_MESSAGE_CHARS = 4000
-_SECRET_ENV_PREFIX = "TELEGRAM_"
 
 START = "{name} 번역을 시작합니다. 논문 길이에 따라 수십 분 이상 걸릴 수 있습니다."
 FAILED = "{name}을(를) 번역하지 못했습니다.\n\n{reason}"
@@ -92,8 +130,8 @@ def build_claude_argv() -> list[str]:
 
 
 def _child_env(env: Mapping[str, str]) -> dict[str, str]:
-    """Drop bot secrets; the model never needs the Telegram token."""
-    return {k: v for k, v in env.items() if not k.startswith(_SECRET_ENV_PREFIX)}
+    """Allowlisted variables only; the model never sees the Telegram token."""
+    return {key: env[key] for key in CHILD_ENV_KEYS if key in env}
 
 
 def _clip(text: str, limit: int = MAX_MESSAGE_CHARS) -> str:

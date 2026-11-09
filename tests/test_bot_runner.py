@@ -4,6 +4,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from src.bot.jobs import Job
 from src.bot.runner import (
     ALLOWED_TOOLS,
@@ -89,6 +91,24 @@ def test_allowlist_has_no_web_tools_and_denies_them_explicitly():
     assert {"WebFetch", "WebSearch"} <= set(denied)
 
 
+@pytest.mark.parametrize(
+    "rule",
+    [
+        "Edit(./src/**)",
+        "Write(./src/**)",
+        "Edit(./.claude/**)",
+        "Write(./.claude/**)",
+        "Edit(./glossary.json)",
+        "Write(./pyproject.toml)",
+        "Read(./.env)",
+    ],
+)
+def test_repo_code_config_and_secrets_are_denied(rule):
+    argv = build_claude_argv()
+
+    assert rule in argv[argv.index("--disallowedTools") + 1 :]
+
+
 def test_allowlist_python_entries_are_the_only_arbitrary_code_paths():
     # The skill's UTF-8 bulk edits and kr-style audit need Python; the container
     # is the sandbox for that (docs/architecture.md). Nothing else runs freely.
@@ -129,13 +149,15 @@ def test_runner_announces_start_and_runs_claude_from_workdir(tmp_path):
     assert "번역을 시작합니다" in notifier.messages[0][1]
 
 
-def test_child_env_drops_telegram_secrets_and_keeps_claude_auth(tmp_path):
+def test_child_env_is_an_allowlist_without_bot_or_other_secrets(tmp_path):
     run = FakeRun(_claude_ok())
     env = {
         "TELEGRAM_BOT_TOKEN": "secret",
         "TELEGRAM_ALLOWED_CHAT_IDS": "111",
+        "AWS_SECRET_ACCESS_KEY": "aws",
         "CLAUDE_CODE_OAUTH_TOKEN": "oauth",
         "PATH": "/usr/bin",
+        "HOME": "/home/bot",
     }
     runner, _ = _runner(tmp_path, run, env)
 
@@ -144,6 +166,7 @@ def test_child_env_drops_telegram_secrets_and_keeps_claude_auth(tmp_path):
     assert run.calls[0][1]["env"] == {
         "CLAUDE_CODE_OAUTH_TOKEN": "oauth",
         "PATH": "/usr/bin",
+        "HOME": "/home/bot",
     }
 
 
