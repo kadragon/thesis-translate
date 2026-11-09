@@ -18,9 +18,9 @@ if TYPE_CHECKING:
 _INDENT = "  "
 _SENTENCE_END = (".", "?", "!", ":", '"', "'", "”", "’", ")")  # noqa: RUF001
 _PAGE_NUMBER = re.compile(r"^\d+$")
-_COMPOUND = re.compile(r"[^\W\d_]+(?:-[^\W\d_]+)+")
-_TRAILING_WORD = re.compile(r"[^\W\d_]+-$")
-_LEADING_WORD = re.compile(r"[^\W\d_]+")
+_COMPOUND = re.compile(r"[^\W_]+(?:-[^\W_]+)+")
+_TRAILING_WORD = re.compile(r"(?:[^\W_]+-)+$")
+_LEADING_WORD = re.compile(r"[^\W_]+(?:-[^\W_]+)*")
 _XML_INVALID = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")  # pdftotext leaks these
 # Layout thresholds in PDF points (1/72 in).
 _INDENT_PT = 4.0  # first-line indent / hanging outdent
@@ -172,13 +172,23 @@ def split_pages(raw: str) -> list[str]:
 
 def _known_compounds(pages: list[str], extra: Iterable[str]) -> frozenset[str]:
     """Casefolded hyphenated words written whole on one line, plus ``extra``."""
-    found = {
+    lines = [line for page in pages for line in page.split("\n")]
+    return frozenset(
         match.casefold()
-        for page in pages
-        for line in page.split("\n")
+        for line in [*lines, *extra]
         for match in _COMPOUND.findall(line)
-    }
-    return frozenset(found | {term.casefold() for term in extra if "-" in term})
+    )
+
+
+def _is_known_compound(head: str, tail: str, compounds: frozenset[str]) -> bool:
+    """Whether some ``...head-`` + ``tail...`` word span forms a known compound."""
+    left = head.casefold().rstrip("-").split("-")
+    right = tail.casefold().split("-")
+    return any(
+        "-".join(left[i:] + right[:j]) in compounds
+        for i in range(len(left))
+        for j in range(1, len(right) + 1)
+    )
 
 
 def _join(left: str, right: str, compounds: frozenset[str] = frozenset()) -> str:
@@ -188,7 +198,7 @@ def _join(left: str, right: str, compounds: frozenset[str] = frozenset()) -> str
         if not right[:1].islower():
             return left + right
         head, tail = _TRAILING_WORD.search(left), _LEADING_WORD.match(right)
-        if head and tail and f"{head.group()}{tail.group()}".casefold() in compounds:
+        if head and tail and _is_known_compound(head.group(), tail.group(), compounds):
             return left + right
         return left[:-1] + right
     return f"{left} {right}"

@@ -50,6 +50,15 @@ def _sibling(source: str, suffix: str) -> Path:
     return path.with_name(f"{stem}{suffix}")
 
 
+def _compounds() -> list[str]:
+    """Glossary terms for hyphen repair; extraction never fails on the glossary."""
+    try:
+        return [entry["term"] for entry in load_terms([_glossary()])]
+    except ValueError as exc:
+        logger.warning("용어 파일 오류(하이픈 복원에 쓰지 않음): %s", exc)
+        return []
+
+
 def _extract(args: argparse.Namespace) -> int:
     output = args.output or f"{Path(args.pdf).stem}_en.txt"
     if Path(output).exists() and not args.force:
@@ -77,16 +86,7 @@ def _extract(args: argparse.Namespace) -> int:
             len(pages),
         )
         return 1
-    try:
-        glossary = load_terms([_glossary()])
-    except ValueError as exc:
-        logger.error("용어 파일 오류: %s", exc)  # noqa: TRY400
-        return 1
-    blocks = build_blocks(
-        pages,
-        start_page=args.start_page,
-        compounds=[entry["term"] for entry in glossary],
-    )
+    blocks = build_blocks(pages, start_page=args.start_page, compounds=_compounds())
     write_blocks(blocks, output)
     logger.info("%d개 블록을 %s에 저장했습니다.", len(blocks), output)
     return 0

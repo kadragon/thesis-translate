@@ -269,3 +269,19 @@ def test_extract_keeps_glossary_compound_hyphen(tmp_path):
     ):
         assert main(["extract", "paper.pdf", "-o", str(out)]) == 0
     assert "A long-term study." in out.read_text(encoding="utf-8")
+
+
+def test_extract_warns_and_continues_on_malformed_glossary(tmp_path, caplog):
+    root = tmp_path / "repo"
+    root.mkdir()
+    _write(root / "glossary.json", '{"not": "a list"}')
+    out = tmp_path / "paper_en.txt"
+
+    with (
+        patch("src.main.PROJECT_ROOT", root),
+        patch("src.main.extract_pdf_text", return_value="A long-\nterm study.\f"),
+        patch("src.main.configure_logging"),
+    ):
+        assert main(["extract", "paper.pdf", "-o", str(out)]) == 0
+    assert "용어 파일 오류" in caplog.text
+    assert "A longterm study." in out.read_text(encoding="utf-8")

@@ -81,6 +81,27 @@ def test_build_blocks_keeps_hyphen_of_glossary_compound():
     ]
 
 
+def test_build_blocks_keeps_hyphen_of_multi_hyphen_and_digit_compounds():
+    pages = [
+        "A state-of-the-art, end-to-end, COVID-19-related model.\n\n"
+        "Our state-of-the-\nart, end-to-\nend, COVID-19-\nrelated, "
+        "non-end-to-\nend nets."
+    ]
+
+    assert build_blocks(pages, start_page=1)[-1] == (
+        "Our state-of-the-art, end-to-end, COVID-19-related, non-end-to-end nets."
+    )
+
+
+def test_build_blocks_keeps_hyphen_of_compound_inside_multiword_glossary_term():
+    pages = ["A long-\nterm memory."]
+
+    assert build_blocks(pages, start_page=1, compounds=["long-term memory"]) == [
+        "p.1",
+        "A long-term memory.",
+    ]
+
+
 def test_build_blocks_drops_standalone_page_numbers():
     pages = ["Body text.\n\n174"]
 
