@@ -9,8 +9,6 @@ FROM python:3.12-slim
 
 ARG CLAUDE_CODE_VERSION=2.1.319
 ARG PLUGIN_MARKETPLACE=kadragon/agent-toolkit
-# Must match HOME_TEMPLATE in src/bot/main.py.
-ARG HOME_TEMPLATE=/opt/claude-home
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -26,16 +24,17 @@ COPY --from=ghcr.io/astral-sh/uv:0.13.1 /uv /usr/local/bin/uv
 
 # Claude Code in a root-owned, world-executable location, plus a root-owned
 # ~/.claude template with the kr-style plugin (translate-paper step 7). Each job
-# gets a copy of the template's .claude as its own HOME.
-RUN mkdir -p /opt/claude/bin "$HOME_TEMPLATE" \
+# gets a copy of the template's .claude as its own HOME. The template path is
+# fixed: src/bot/main.py reads it as HOME_TEMPLATE.
+RUN mkdir -p /opt/claude/bin /opt/claude-home \
  && curl -fsSL https://claude.ai/install.sh \
-    | HOME="$HOME_TEMPLATE" bash -s "${CLAUDE_CODE_VERSION}" \
- && install -m 0755 "$(readlink -f "$HOME_TEMPLATE/.local/bin/claude")" /opt/claude/bin/claude \
- && rm -rf "$HOME_TEMPLATE/.local" \
- && HOME="$HOME_TEMPLATE" claude plugin marketplace add "${PLUGIN_MARKETPLACE}" \
- && HOME="$HOME_TEMPLATE" claude plugin install prod@kadragon \
- && chown -R root:root /opt/claude "$HOME_TEMPLATE" \
- && chmod -R go-w,a+rX /opt/claude "$HOME_TEMPLATE"
+    | HOME=/opt/claude-home bash -s "${CLAUDE_CODE_VERSION}" \
+ && install -m 0755 "$(readlink -f "/opt/claude-home/.local/bin/claude")" /opt/claude/bin/claude \
+ && rm -rf "/opt/claude-home/.local" \
+ && HOME=/opt/claude-home claude plugin marketplace add "${PLUGIN_MARKETPLACE}" \
+ && HOME=/opt/claude-home claude plugin install prod@kadragon \
+ && chown -R root:root /opt/claude /opt/claude-home \
+ && chmod -R go-w,a+rX /opt/claude /opt/claude-home
 
 # The checkout is root-owned and read-only for jobs: they work in /jobs/<id>/work
 # through symlinks into /app, and the bot copies their outputs to
