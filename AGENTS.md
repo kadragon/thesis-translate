@@ -59,9 +59,11 @@ Updates (newest first, keep ~5).
 
 ## Updates
 
+- 2026-11-09: The image runs the bot as root, so every container job is isolated; `claude`
+  lives in `/opt/claude/bin`, the HOME template in `/opt/claude-home`, outputs in
+  `/app/outputs/<stem>/` (runbook has the manual check).
 - 2026-11-09: Bot runner has a root mode (`src/bot/workspace.py`): per-job UID and
-  `/jobs/<id>` workspace, outputs copied to root-owned `outputs/<stem>/`; the image still
-  runs as `bot` until backlog ticket 2 switches it.
+  `/jobs/<id>` workspace, outputs copied to root-owned `outputs/<stem>/`.
 - 2026-11-09: `extract` keeps a line-end hyphen when the compound appears whole elsewhere in
   the paper or in `glossary.json`; `verify`/`extract` read `glossary.json` from the project
   root, not the CWD.
@@ -71,5 +73,3 @@ Updates (newest first, keep ~5).
   (`docs/`, golden principles, ruff ban on LLM SDKs); OpenAI-era archive sections removed.
 - 2026-11-08: `verify` also warns on missing source numbers, `Figure/Table N` without
   `그림/표 N`, and term-table violations; `extract` refuses scans; new `dual` command.
-- 2026-11-08: `extract` splits paragraphs by `pdftotext -bbox-layout` line geometry;
-  `verify` warns when a translation is under 0.3x its source length.

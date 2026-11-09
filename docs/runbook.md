@@ -55,30 +55,41 @@ docker logs -f thesis-bot   # job lines: exit code, cost, 거부된 도구 호�
 
 Update: `git pull`, rebuild, `docker rm -f thesis-bot`, run again. A rebuild also discards
 anything a job wrote, since outputs live only in the container (they reach the user via
-Telegram; `docker cp thesis-bot:/app/<stem>_ko.txt .` before removing it if needed).
+Telegram; `docker cp thesis-bot:/app/outputs/<stem>/ .` before removing it if needed).
 
-What the image guarantees (verified with `docker run … bash`):
+What the image guarantees:
 
-- Runs as uid `bot`. `/app` and `.venv` are root-owned and read-only for `bot`; `/app` has
-  the sticky bit, so jobs can create `<stem>_*` files and `inbox/` but cannot modify, rename,
-  or delete code, the harness, or `glossary.json` — this is what contains the
-  `Bash(python…)` entries in the tool allowlist.
+- The bot runs as root (PID 1) and gives each job a fresh, never-reused UID (20000 + n) and
+  `/jobs/<id>/{work,home,tmp}` (`src/bot/workspace.py`). The workdir links read-only into
+  `/app`; HOME is a copy of the root-owned template `/opt/claude-home/.claude` (settings and
+  the `prod@kadragon` plugin for kr-style); `claude` lives in root-owned `/opt/claude/bin`.
+- `/app`, `.venv`, `inbox/`, and `outputs/` are root-owned 0755. After a job, the bot kills
+  every process of its UID, deletes that UID's files in `/tmp`, `/var/tmp`, `/dev/shm`,
+  copies regular `<stem>_*` files (no symlinks) to root-owned `/app/outputs/<stem>/`, and
+  removes `/jobs/<id>` — this is what contains the `Bash(python…)` entries in the allowlist.
 - `.env` is never in the image (`.dockerignore`); secrets arrive via `--env-file`, and the
   runner passes only `CHILD_ENV_KEYS` to `claude`.
 - The bot is PID 1 (`CMD` runs the venv entry point, no `uv run` parent) and calls
-  `prctl(PR_SET_DUMPABLE, 0)` at startup, so the same-UID `claude` child cannot read
-  `/proc/1/environ` (the token). `docker exec` shells inherit the container env, so do not
-  judge this from an exec shell's own `/proc/self/environ`.
+  `prctl(PR_SET_DUMPABLE, 0)` at startup, so no child can read `/proc/1/environ` (the
+  token). `docker exec` shells inherit the container env, so do not judge this from an exec
+  shell's own `/proc/self/environ`.
 - `docker stop` exits cleanly: the bot handles SIGTERM itself (no tini — an init process
   would hold the token in a readable environ) and reaps each job's process group.
 - Workdir steering files are neutralized: root-owned `CLAUDE.local.md`, `.python-version`,
-  and `glossary.json` (`[]` when the host has none), `UV_NO_CONFIG=1` (ignores `uv.toml`), `--strict-mcp-config` (ignores
-  `.mcp.json`), and `verify` runs with `python -P` (a dropped `json.py` cannot shadow stdlib).
+  and `glossary.json` (`[]` when the host has none), `UV_NO_CONFIG=1` (ignores `uv.toml`),
+  `--strict-mcp-config` (ignores `.mcp.json`), and `verify` runs with `python -P` (a dropped
+  `json.py` cannot shadow stdlib).
+- Claude Code version is pinned (`CLAUDE_CODE_VERSION` build arg).
 
-Residual risk (backlog): jobs share `/app` and `/home/bot`, so a PDF that escapes through
-Python could alter later jobs' outputs or `~/.claude` until the container is recreated.
-- Claude Code version is pinned (`CLAUDE_CODE_VERSION` build arg); the `prod@kadragon`
-  plugin (kr-style) is installed for `bot`.
+Manual check (2026-11-09, Docker 29.8.2, Claude Code 2.1.319): a script run as PID 1 in the
+image prepared two jobs through `build_isolation`. As job A's UID, writing to `/app`,
+`/app/src`, `/app/outputs`, `/app/inbox`, `/jobs`, `/jobs/<A>`, `/opt/claude-home/.claude`,
+`/opt/claude/bin/claude`, `glossary.json`, and job B's `work`/`home`/`tmp` all failed;
+`claude --version`, `claude plugin list` (shows `prod`), and `uv run thesis-translate`
+worked. A `setsid`'d `sleep`, a `/tmp` file, and an `_en.txt` symlink to `/etc/shadow` left
+by job A were gone after sweep/collect/discard: no UID-A process, no `/jobs/<A>`, and
+`outputs/a/` held only a root-owned 0644 `a_ko.txt`. Rerun after changing the Dockerfile or
+`src/bot/workspace.py`.
 
 Not configured: network egress limits. If the host allows it, restrict outbound traffic to
 `api.anthropic.com`, `api.telegram.org`, and the Claude auth endpoints.

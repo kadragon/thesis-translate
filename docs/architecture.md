@@ -44,9 +44,9 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
   downloading anything (golden principle 2).
 - **Input**: accept `application/pdf` documents only. Bot API downloads cap at 20 MB; reply
   with a Korean error above that instead of failing silently.
-- **Queue**: one translation at a time. Jobs share the repo root (the skill's file contract:
-  `<stem>_*.txt` and `glossary.json` resolve against the CWD), and a paper takes minutes to
-  hours on one subscription. Acknowledge receipt and queue position immediately.
+- **Queue**: one translation at a time; a paper takes minutes to hours on one subscription.
+  The skill's file contract (`<stem>_*.txt`, `glossary.json`) resolves against the CWD: the
+  job's own workdir in root mode, the repo root otherwise. Acknowledge receipt and queue position immediately.
 - **Claude invocation** (`src/bot/runner.py`): `build_claude_argv()` is the single argv
   source — `claude -p --output-format json --permission-mode dontAsk
   --no-session-persistence --allowedTools … --disallowedTools WebFetch WebSearch`; the prompt
@@ -57,9 +57,8 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
   `PROTECTED_PATHS` (code, tests, harness, `glossary.json`, `.env`) and `Read(./.env)`;
   deny beats allow. The child env is the `CHILD_ENV_KEYS` allowlist (no `TELEGRAM_*`).
   Also `--strict-mcp-config`; `verify` runs as `python -P`. The bot process is
-  non-dumpable (`disable_dumpable`, `prctl`) so the same-UID child cannot read its
-  environ. Residual risk: Python can bypass path denies — the container setup in
-  `docs/runbook.md` is what contains it.
+  non-dumpable (`disable_dumpable`, `prctl`) so no child can read its environ. Python can
+  bypass path denies; per-job isolation (below) is what contains it.
   Claude runs via `run_in_group` (new session); its whole process group is killed and
   reaped after it exits or times out. Hostile code can `setsid` out of the group, so as
   PID 1 (container) the runner also SIGKILLs every other process of its UID
@@ -77,8 +76,9 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
   four `<stem>_*` outputs are copied (regular files only, `O_NOFOLLOW` via a dir fd) into
   root-owned `outputs/<stem>/`, `verify` runs there, and `/jobs/<id>` plus the UID's files in
   `/tmp`, `/var/tmp`, `/dev/shm` are deleted. Non-root runs keep the shared-CWD mode below and
-  warn at startup. Design: `docs/design/per-job-isolation.md`; the image switch is backlog
-  ticket 2.
+  warn at startup. The `Dockerfile` runs the bot as root, so the container always uses root
+  mode. Design: `docs/design/per-job-isolation.md`; image guarantees and the manual check:
+  `docs/runbook.md`.
 - **Stem**: `sanitize_stem` keeps the base name only, maps unsafe characters to `_`, strips
   leading `-`/`.` (no CLI flags), caps 120 chars. If `<stem>` is queued/running or
   `inbox/<stem>.pdf`, `<stem>_en.txt`, `<stem>_ko.txt` exists, append `_<job_id>` instead of
