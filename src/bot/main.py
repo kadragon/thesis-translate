@@ -75,7 +75,8 @@ def build_isolation(
     if euid != 0:
         logger.warning(
             "root가 아니어서 작업별 격리 없이 실행합니다. 작업들이 같은 사용자와 "
-            "작업 디렉터리를 공유합니다."
+            "작업 디렉터리를 공유하고, "
+            "작업이 끝난 뒤 남은 프로세스를 정리하지 않습니다."
         )
         return None
     if not (home_template / ".claude").is_dir():

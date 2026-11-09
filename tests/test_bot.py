@@ -343,6 +343,7 @@ def test_poll_once_advances_even_when_reply_fails():
 def test_isolation_is_off_and_warned_when_not_root(tmp_path, caplog):
     assert build_isolation(tmp_path, euid=1000) is None
     assert "격리" in caplog.text
+    assert "남은 프로세스를 정리하지 않습니다" in caplog.text
 
 
 def test_isolation_is_built_and_reset_when_root(tmp_path):
