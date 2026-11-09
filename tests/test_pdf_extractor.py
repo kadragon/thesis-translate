@@ -54,6 +54,33 @@ def test_build_blocks_keeps_hyphen_before_uppercase_or_digit():
     ]
 
 
+def test_build_blocks_keeps_hyphen_of_compound_seen_elsewhere():
+    pages = [
+        "A self-supervised model.\n\nWe train self-\nsupervised and pre-\ntrained nets."
+    ]
+
+    assert build_blocks(pages, start_page=1) == [
+        "p.1",
+        "A self-supervised model.",
+        "We train self-supervised and pretrained nets.",
+    ]
+
+
+def test_build_blocks_keeps_hyphen_of_compound_across_pages():
+    pages = ["Self-Supervised.\n\nIt is self-", "supervised here."]
+
+    assert build_blocks(pages, start_page=1)[-1] == "It is self-supervised here."
+
+
+def test_build_blocks_keeps_hyphen_of_glossary_compound():
+    pages = ["A long-\nterm study."]
+
+    assert build_blocks(pages, start_page=1, compounds={"Long-Term"}) == [
+        "p.1",
+        "A long-term study.",
+    ]
+
+
 def test_build_blocks_drops_standalone_page_numbers():
     pages = ["Body text.\n\n174"]
 

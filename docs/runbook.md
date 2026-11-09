@@ -109,9 +109,6 @@ Use `--force` only for a deliberate re-extract.
 **`PDF 추출 실패`** — `pdftotext` missing or the PDF is encrypted/broken; the message carries
 pdftotext's stderr.
 
-**`verify` skips the glossary outside the repo root** — `glossary.json` resolves against CWD
-(backlog debt item). Run from the repo root.
-
 **Garbled Korean after a shell edit** — `sed`/`perl` with non-ASCII literals on macOS. Redo the
 edit in Python with explicit UTF-8.
 

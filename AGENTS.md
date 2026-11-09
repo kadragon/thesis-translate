@@ -59,6 +59,9 @@ Updates (newest first, keep ~5).
 
 ## Updates
 
+- 2026-11-09: `extract` keeps a line-end hyphen when the compound appears whole elsewhere in
+  the paper or in `glossary.json`; `verify`/`extract` read `glossary.json` from the project
+  root, not the CWD.
 - 2026-11-09: Telegram bot `thesis-translate-bot` (`src/bot/`, `Dockerfile`): allowlisted
   chats, PDF intake to `inbox/`, single-worker queue, headless `claude -p` with a tool
   allowlist and protected-path denies, `verify` gate before `sendDocument`. Harness set up
@@ -67,5 +70,3 @@ Updates (newest first, keep ~5).
   `그림/표 N`, and term-table violations; `extract` refuses scans; new `dual` command.
 - 2026-11-08: `extract` splits paragraphs by `pdftotext -bbox-layout` line geometry;
   `verify` warns when a translation is under 0.3x its source length.
-- 2026-11-08: OpenAI translation pipeline removed; CLI is `thesis-translate
-  extract|verify|format|dual`.

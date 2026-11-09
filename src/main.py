@@ -31,6 +31,12 @@ from src.utils.rich_logging import configure_logging
 logger = logging.getLogger(__name__)
 
 _INDENT = "  "
+# The shared glossary lives at the repo root, wherever the CLI is run from.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _glossary() -> Path:
+    return PROJECT_ROOT / "glossary.json"
 
 
 def _sibling(source: str, suffix: str) -> Path:
@@ -71,7 +77,16 @@ def _extract(args: argparse.Namespace) -> int:
             len(pages),
         )
         return 1
-    blocks = build_blocks(pages, start_page=args.start_page)
+    try:
+        glossary = load_terms([_glossary()])
+    except ValueError as exc:
+        logger.error("용어 파일 오류: %s", exc)  # noqa: TRY400
+        return 1
+    blocks = build_blocks(
+        pages,
+        start_page=args.start_page,
+        compounds=[entry["term"] for entry in glossary],
+    )
     write_blocks(blocks, output)
     logger.info("%d개 블록을 %s에 저장했습니다.", len(blocks), output)
     return 0
@@ -90,7 +105,7 @@ def _verify(args: argparse.Namespace) -> int:
     term_paths = (
         [Path(path) for path in args.glossary]
         if args.glossary
-        else [Path("glossary.json"), _sibling(args.source, "_terms.json")]
+        else [_glossary(), _sibling(args.source, "_terms.json")]
     )
     try:
         terms = load_terms(term_paths)
