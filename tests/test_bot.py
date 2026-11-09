@@ -17,6 +17,7 @@ from src.bot.handler import (
 from src.bot.main import (
     POLL_TIMEOUT_SECONDS,
     PR_SET_DUMPABLE,
+    build_isolation,
     disable_dumpable,
     poll_once,
 )
@@ -337,3 +338,19 @@ def test_poll_once_advances_even_when_reply_fails():
 
     assert poll_once(client, ALLOWED, intake, offset=None) == 9 + 1
     assert len(intake.accepted) == 1
+
+
+def test_isolation_is_off_and_warned_when_not_root(tmp_path, caplog):
+    assert build_isolation(tmp_path, euid=1000) is None
+    assert "격리" in caplog.text
+
+
+def test_isolation_is_built_and_reset_when_root(tmp_path):
+    jobs = tmp_path / "jobs"
+    (jobs / "stale").mkdir(parents=True)
+
+    iso = build_isolation(tmp_path, euid=0, jobs_dir=jobs)
+
+    assert iso is not None
+    assert iso.outputs_dir == tmp_path / "outputs"
+    assert list(jobs.iterdir()) == []

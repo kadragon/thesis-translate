@@ -54,7 +54,7 @@ def _new_id() -> str:
 class Intake:
     """Downloads into ``inbox`` and enqueues; never overwrites existing outputs."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - keyword-only injected collaborators
         self,
         downloader: Downloader,
         queue: JobQueue,
@@ -62,12 +62,14 @@ class Intake:
         inbox: Path,
         workdir: Path,
         new_id: Callable[[], str] = _new_id,
+        outputs: Path | None = None,
     ) -> None:
         self._downloader = downloader
         self._queue = queue
         self._inbox = inbox
         self._workdir = workdir
         self._new_id = new_id
+        self._outputs = outputs
 
     def accept(self, chat_id: int, document: dict[str, Any]) -> str:
         """Return the reply text for the user."""
@@ -111,5 +113,6 @@ class Intake:
                 (self._workdir / f"{stem}{suffix}").exists()
                 for suffix in ("_en.txt", "_ko.txt")
             )
+            or (self._outputs is not None and (self._outputs / stem).exists())
         )
         return f"{stem}_{job_id}" if taken else stem
