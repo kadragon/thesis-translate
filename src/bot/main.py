@@ -1,0 +1,92 @@
+"""Long-polling entry point: ``thesis-translate-bot``."""
+
+from __future__ import annotations
+
+import logging
+import os
+import time
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Protocol
+
+from src.bot.config import ConfigError, load_config
+from src.bot.handler import handle_update
+from src.bot.intake import Intake
+from src.bot.jobs import JobQueue
+from src.bot.telegram_api import TelegramClient
+from src.utils.rich_logging import configure_logging
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+    from collections.abc import Set as AbstractSet
+
+    from src.bot.handler import Acceptor, Sender
+    from src.bot.jobs import Job
+
+logger = logging.getLogger(__name__)
+
+POLL_TIMEOUT_SECONDS = 30
+RETRY_DELAY_SECONDS = 5
+
+
+class Client(Protocol):
+    def get_updates(self, offset: int | None, timeout: int) -> list[dict[str, Any]]: ...
+
+    def send_message(self, chat_id: int, text: str) -> None: ...
+
+
+def poll_once(
+    client: Client,
+    allowed: AbstractSet[int],
+    intake: Acceptor,
+    offset: int | None,
+) -> int | None:
+    """Fetch one batch, handle each update, and return the next offset."""
+    for update in client.get_updates(offset, POLL_TIMEOUT_SECONDS):
+        offset = update["update_id"] + 1
+        handle_update(update, allowed, client, intake)
+    return offset
+
+
+def _placeholder_runner(client: Sender) -> Callable[[Job], None]:
+    """Stand-in until the job-runner slice wires ``claude -p``."""
+
+    def run(job: Job) -> None:
+        logger.info("작업 %s 차례(실행기 미연결): %s", job.job_id, job.stem)
+        client.send_message(
+            job.chat_id,
+            f"{job.file_name} 차례가 되었지만 번역 실행기가 아직 연결되지 않았습니다.",
+        )
+
+    return run
+
+
+def main(env: Mapping[str, str] | None = None) -> int:
+    """Run the bot until interrupted; exit 1 on bad configuration."""
+    configure_logging()
+    try:
+        config = load_config(os.environ if env is None else env)
+    except ConfigError as exc:
+        logger.error("%s", exc)  # noqa: TRY400
+        return 1
+    client = TelegramClient(config.token)  # pragma: no cover - network from here on
+    queue = JobQueue(runner=_placeholder_runner(client))  # pragma: no cover
+    intake = Intake(  # pragma: no cover
+        client, queue, inbox=Path("inbox"), workdir=Path.cwd()
+    )
+    queue.start()  # pragma: no cover
+    logger.info("봇을 시작합니다. 허용 채팅 %d개", len(config.allowed_chat_ids))
+    offset: int | None = None
+    while True:  # pragma: no cover - network loop
+        try:
+            offset = poll_once(client, config.allowed_chat_ids, intake, offset)
+        except KeyboardInterrupt:
+            return 0
+        except (OSError, RuntimeError, ValueError) as exc:
+            logger.warning(
+                "업데이트 수신 실패, %d초 후 재시도: %s", RETRY_DELAY_SECONDS, exc
+            )
+            time.sleep(RETRY_DELAY_SECONDS)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    raise SystemExit(main())
