@@ -170,3 +170,8 @@ glossary.json
 
 .ruff_cache/
 coverage.json
+
+# Local agent state and bot inbox
+.agents/.maintenance-stamp
+inbox/
+*.pdf

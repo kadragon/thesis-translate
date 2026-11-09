@@ -1,0 +1,22 @@
+# Logs & temp
+*.log
+*.tmp
+*.swp
+.DS_Store
+
+# Python
+__pycache__/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+uv.lock
+package-lock.json
+
+# Secrets
+.env
+
+# Bot inbox (downloaded PDFs)
+inbox/
