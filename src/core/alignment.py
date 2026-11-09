@@ -21,8 +21,9 @@ _MIN_SOURCE_CHARS = 150
 _NUMBER = re.compile(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?(?!\d)|\d+(?:\.\d+)?")
 # (source pattern, Korean label) for figure/table references.
 _FIGURE_REFS = (
-    (re.compile(r"\b(?:Fig(?:ure)?s?|FIG(?:URE)?S?)\.?\s*(\d+)"), "그림"),
-    (re.compile(r"\b(?:Tables?|TABLES?)\s+(\d+|[IVXLC]+)\b"), "표"),
+    # Any case for the word; Roman numerals stay uppercase so "table civil" is no ref.
+    (re.compile(r"\b(?i:fig(?:ure)?s?)\.?\s*(\d+)"), "그림"),
+    (re.compile(r"\b(?i:tables?)\s+(\d+|[IVXLC]+)\b"), "표"),
 )
 
 
