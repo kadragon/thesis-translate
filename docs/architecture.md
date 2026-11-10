@@ -66,8 +66,10 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
   sent to Telegram goes through `ClaudeRunner._redact` (`SECRET_ENV_KEYS` values and
   `sk-ant-…` tokens). Notifier failures are logged; a failed upload falls back to a text
   message naming the server-side file.
-  Timeout 4 h. The log line counts `permission_denials`: a non-zero count means the allowlist
-  blocked a skill step.
+  Timeout 4 h. The log line counts `permission_denials` and logs each one (`Tool: command`,
+  redacted, clipped): a non-zero count means the allowlist blocked a step. The prompt lists the
+  allowed Bash prefixes and tells the model to rephrase a denied command rather than stop —
+  without it, one denied `P=…; pdfinfo …` made a run abandon the job before `extract`.
 - **Isolation (root mode, `src/bot/workspace.py`)**: when the bot runs as root,
   `build_isolation` gives each job a never-reused UID (from 20000) and
   `/jobs/<id>/{work,home,tmp}`: `work` holds symlinks to the read-only checkout entries the
