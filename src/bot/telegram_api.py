@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 from typing import TYPE_CHECKING, Any
+from urllib.error import URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
@@ -15,6 +16,8 @@ _API = "https://api.telegram.org"
 # Long-poll timeout plus slack so the socket outlives the server-side wait.
 _SOCKET_SLACK_SECONDS = 10
 _DOWNLOAD_TIMEOUT_SECONDS = 120
+# Socket timeout for short calls (getFile, sendMessage); 10 s proved too tight.
+_REQUEST_TIMEOUT_SECONDS = 30
 
 
 class TelegramClient:
@@ -55,12 +58,20 @@ class TelegramClient:
 
     def send_message(self, chat_id: int, text: str) -> None:
         self._call(
-            "sendMessage", {"chat_id": chat_id, "text": text}, _SOCKET_SLACK_SECONDS
+            "sendMessage", {"chat_id": chat_id, "text": text}, _REQUEST_TIMEOUT_SECONDS
         )
 
     def get_file(self, file_id: str) -> str:
         """Return the server-side ``file_path`` to pass to :meth:`download_file`."""
-        result = self._call("getFile", {"file_id": file_id}, _SOCKET_SLACK_SECONDS)
+        payload = {"file_id": file_id}
+        try:
+            result = self._call("getFile", payload, _REQUEST_TIMEOUT_SECONDS)
+        except (TimeoutError, URLError) as exc:
+            # urllib wraps connect/handshake timeouts in URLError(reason=TimeoutError).
+            if isinstance(exc, URLError) and not isinstance(exc.reason, TimeoutError):
+                raise
+            # getFile is idempotent, so one retry absorbs a transient stall.
+            result = self._call("getFile", payload, _REQUEST_TIMEOUT_SECONDS)
         return str(result["file_path"])
 
     def download_file(self, file_path: str, dest: Path) -> None:

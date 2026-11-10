@@ -3,6 +3,7 @@
 import io
 import json
 from unittest.mock import patch
+from urllib.error import URLError
 
 import pytest
 
@@ -237,6 +238,71 @@ def test_client_get_file_returns_file_path():
 
     assert path == "documents/a.pdf"
     assert json.loads(urlopen.call_args.args[0].data) == {"file_id": "F1"}
+
+
+def test_client_get_file_retries_once_on_timeout():
+    ok = _response({"ok": True, "result": {"file_path": "documents/a.pdf"}})
+    with patch(
+        "src.bot.telegram_api.urlopen",
+        side_effect=[TimeoutError("The read operation timed out"), ok],
+    ) as urlopen:
+        path = TelegramClient("t0k").get_file("F1")
+
+    assert path == "documents/a.pdf"
+    assert urlopen.call_count == 2  # noqa: PLR2004 - first try + one retry
+
+
+def test_client_get_file_retries_once_on_connect_timeout():
+    ok = _response({"ok": True, "result": {"file_path": "documents/a.pdf"}})
+    with patch(
+        "src.bot.telegram_api.urlopen",
+        side_effect=[URLError(TimeoutError("timed out")), ok],
+    ) as urlopen:
+        path = TelegramClient("t0k").get_file("F1")
+
+    assert path == "documents/a.pdf"
+    assert urlopen.call_count == 2  # noqa: PLR2004 - first try + one retry
+
+
+def test_client_get_file_does_not_retry_other_url_errors():
+    with (
+        patch(
+            "src.bot.telegram_api.urlopen",
+            side_effect=URLError(ConnectionRefusedError("refused")),
+        ) as urlopen,
+        pytest.raises(URLError),
+    ):
+        TelegramClient("t0k").get_file("F1")
+
+    assert urlopen.call_count == 1
+
+
+def test_client_get_file_raises_after_second_timeout():
+    with (
+        patch(
+            "src.bot.telegram_api.urlopen",
+            side_effect=[TimeoutError("first"), TimeoutError("second")],
+        ) as urlopen,
+        pytest.raises(TimeoutError, match="second"),
+    ):
+        TelegramClient("t0k").get_file("F1")
+
+    assert urlopen.call_count == 2  # noqa: PLR2004 - first try + one retry
+
+
+def test_client_short_calls_use_request_timeout():
+    with patch(
+        "src.bot.telegram_api.urlopen",
+        side_effect=[
+            _response({"ok": True, "result": {"file_path": "documents/a.pdf"}}),
+            _response({"ok": True, "result": {}}),
+        ],
+    ) as urlopen:
+        client = TelegramClient("t0k")
+        client.get_file("F1")
+        client.send_message(111, "안녕")
+
+    assert [c.kwargs["timeout"] for c in urlopen.call_args_list] == [30, 30]
 
 
 def test_client_download_file_writes_bytes(tmp_path):
