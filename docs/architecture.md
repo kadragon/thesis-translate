@@ -96,6 +96,12 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
   message as glossary suggestions (the prompt skips the step-8 report), nothing when there are none. Any failure sends a
   Korean reason and no document (golden principle 5).
 - **Scans**: `extract` refuses image-only PDFs; relay that message — OCR is out of scope.
+- **Glossary over Telegram** (`src/bot/glossary.py`): text from an allowlisted chat made of
+  `English → 한국어` lines (the suggestion reply's shape) adds new terms to `glossary.json`
+  and skips existing ones (case-insensitive); `/glossary` lists entries (chunked under
+  4096 chars), `/update term → 번역어` changes and `/delete term` removes entries, one per
+  line. An unreadable file is reported and never overwritten. Jobs still cannot edit it
+  (`PROTECTED_PATHS`); only the bot process writes it, in place.
 
 Client library: none — `src/bot/telegram_api.py` calls the Bot API with stdlib `urllib`
 (no new dependency; the bot needs only `getUpdates`, `sendMessage`, file download/upload).

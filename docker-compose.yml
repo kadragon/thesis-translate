@@ -4,4 +4,13 @@ services:
     # No `init: true`: the bot must stay PID 1 and handle SIGTERM itself; an init
     # process would hold the bot token in a readable environ (docs/runbook.md).
     env_file: .env
+    # The bot edits the glossary from Telegram; keep it on the host so a rebuild
+    # does not drop it. Writes are in place (same inode), so a file mount works.
+    # No auto-created host path: a missing file must fail, not become a directory.
+    volumes:
+      - type: bind
+        source: ./glossary.json
+        target: /app/glossary.json
+        bind:
+          create_host_path: false
     restart: unless-stopped
