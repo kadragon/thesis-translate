@@ -12,6 +12,11 @@ test -z "$(git status --porcelain)" || { echo "커밋되지 않은 변경이 있
 
 git pull --ff-only origin main
 
+# Compose bind-mounts glossary.json; a missing source would be created as a directory.
+# Jobs read it as their own UID: readable by all, writable only by its owner.
+test -f glossary.json || echo '[]' > glossary.json
+chmod 0644 glossary.json
+
 # Only one bot may poll the token: also remove the pre-Compose `docker run` container.
 docker rm -f thesis-bot 2>/dev/null || true
 docker compose down

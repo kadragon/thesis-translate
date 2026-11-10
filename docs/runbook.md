@@ -83,8 +83,12 @@ What the image guarantees:
   shell's own `/proc/self/environ`.
 - `docker stop` exits cleanly: the bot handles SIGTERM itself (no tini — an init process
   would hold the token in a readable environ) and reaps each job's process group.
-- Workdir steering files are neutralized: root-owned `CLAUDE.local.md`, `.python-version`,
-  and `glossary.json` (`[]` when the host has none), `UV_NO_CONFIG=1` (ignores `uv.toml`),
+- `glossary.json` is bind-mounted from the server checkout (`docker-compose.yml`) so terms
+  added over Telegram survive a rebuild; `deploy.sh` creates it as `[]` when missing (a
+  missing mount source would become a directory) and sets 0644, so jobs can read but not
+  write it. The bot rewrites it in place (same inode); an atomic rename would not reach the
+  host file.
+- Workdir steering files are neutralized: root-owned `CLAUDE.local.md`, `.python-version`, `UV_NO_CONFIG=1` (ignores `uv.toml`),
   `--strict-mcp-config` (ignores `.mcp.json`), and `verify` runs with `python -P` (a dropped
   `json.py` cannot shadow stdlib).
 - Claude Code version is pinned (`CLAUDE_CODE_VERSION` build arg).

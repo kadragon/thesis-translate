@@ -8,6 +8,7 @@ from urllib.error import URLError
 import pytest
 
 from src.bot.config import BotConfig, ConfigError, load_config, parse_chat_ids
+from src.bot.glossary import MAX_MESSAGE_CHARS, Glossary
 from src.bot.handler import (
     HINT,
     MAX_DOWNLOAD_BYTES,
@@ -110,6 +111,79 @@ def test_pdf_over_download_limit_is_rejected_before_download():
 def test_text_message_gets_hint():
     client, _ = _handle(
         {"update_id": 1, "message": {"chat": {"id": OWNER}, "text": "안녕"}}
+    )
+
+    assert client.sent == [(OWNER, HINT)]
+
+
+def _text_update(chat_id, text):
+    return {"update_id": 1, "message": {"chat": {"id": chat_id}, "text": text}}
+
+
+def test_allowlisted_arrow_text_adds_to_glossary(tmp_path):
+    path = tmp_path / "glossary.json"
+    client, intake = FakeClient(), FakeIntake()
+
+    handle_update(
+        _text_update(OWNER, "frames of reference → 준거 틀"),
+        ALLOWED,
+        client,
+        intake,
+        glossary=Glossary(path),
+    )
+
+    assert json.loads(path.read_text(encoding="utf-8")) == [
+        {"term": "frames of reference", "translation": "준거 틀"}
+    ]
+    assert len(client.sent) == 1
+    assert "frames of reference → 준거 틀" in client.sent[0][1]
+
+
+def test_non_allowlisted_glossary_command_gets_no_reply_and_no_write(tmp_path):
+    path = tmp_path / "glossary.json"
+    client, intake = FakeClient(), FakeIntake()
+
+    for text in ("a → 가", "/glossary", "/delete a"):
+        handle_update(
+            _text_update(999, text), ALLOWED, client, intake, glossary=Glossary(path)
+        )
+
+    assert client.sent == []
+    assert not path.exists()
+
+
+def test_glossary_list_sends_each_chunk_as_its_own_message(tmp_path):
+    path = tmp_path / "glossary.json"
+    path.write_text(
+        json.dumps(
+            [{"term": f"term {i}", "translation": "번역어" * 30} for i in range(200)],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    client, intake = FakeClient(), FakeIntake()
+
+    handle_update(
+        _text_update(OWNER, "/glossary"),
+        ALLOWED,
+        client,
+        intake,
+        glossary=Glossary(path),
+    )
+
+    assert len(client.sent) > 1
+    assert all(len(text) <= MAX_MESSAGE_CHARS for _, text in client.sent)
+
+
+def test_plain_text_still_gets_hint_with_glossary(tmp_path):
+    client, intake = FakeClient(), FakeIntake()
+
+    handle_update(
+        _text_update(OWNER, "안녕"),
+        ALLOWED,
+        client,
+        intake,
+        glossary=Glossary(tmp_path / "g.json"),
     )
 
     assert client.sent == [(OWNER, HINT)]

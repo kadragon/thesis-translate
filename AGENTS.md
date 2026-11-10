@@ -59,6 +59,9 @@ Updates (newest first, keep ~5).
 
 ## Updates
 
+- 2026-11-10: Allowlisted chats edit `glossary.json` over Telegram: `term → 번역어` lines
+  add (existing terms skipped), `/glossary` lists, `/update` changes, `/delete` removes.
+  Compose bind-mounts the host's `glossary.json`.
 - 2026-11-10: Intake sends one reply with page count and an estimated time; the runner's
   start notice goes only to jobs that waited in the queue.
 - 2026-11-10: `getFile`/`sendMessage` use a 30 s socket timeout (was the 10 s long-poll
@@ -67,5 +70,3 @@ Updates (newest first, keep ~5).
   only; the step-8 report is skipped.
 - 2026-11-10: Bot allowlist adds `Bash(pdfinfo:*)`; the prompt lists the allowed Bash
   prefixes and says a denial is not a reason to stop; each denied call is logged.
-- 2026-11-09: In root mode the bot refuses to start without `/opt/claude-home/.claude`;
-  a job timeout no longer waits on `setsid`'d descendants holding the output pipes.

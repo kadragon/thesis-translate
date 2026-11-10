@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from src.bot.config import ConfigError, load_config
+from src.bot.glossary import Glossary
 from src.bot.handler import handle_update
 from src.bot.intake import Intake
 from src.bot.jobs import JobQueue
@@ -109,6 +110,7 @@ def poll_once(
     allowed: AbstractSet[int],
     intake: Acceptor,
     offset: int | None,
+    glossary: Glossary | None = None,
 ) -> int | None:
     """Fetch one batch, handle each update, and return the next offset."""
     for update in client.get_updates(offset, POLL_TIMEOUT_SECONDS):
@@ -116,7 +118,7 @@ def poll_once(
         # (a replay would queue the same PDF again).
         offset = update["update_id"] + 1
         try:
-            handle_update(update, allowed, client, intake)
+            handle_update(update, allowed, client, intake, glossary)
         except Exception:
             logger.exception("업데이트 %s 처리 실패", update.get("update_id"))
     return offset
@@ -162,6 +164,8 @@ def _serve(  # pragma: no cover - network loop
         workdir=workdir,
         outputs=isolation.outputs_dir if isolation else None,
     )
+    # Shared glossary the skill reads; bind-mounted from the host in Compose.
+    glossary = Glossary(workdir / "glossary.json")
     queue.start()
     # As PID 1 the default SIGTERM action is ignored; stop cleanly on docker stop.
     signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)
@@ -171,7 +175,9 @@ def _serve(  # pragma: no cover - network loop
     with contextlib.suppress(KeyboardInterrupt):
         while True:
             try:
-                offset = poll_once(client, config.allowed_chat_ids, intake, offset)
+                offset = poll_once(
+                    client, config.allowed_chat_ids, intake, offset, glossary
+                )
             except Exception as exc:
                 logger.warning(
                     "업데이트 수신 실패, %d초 후 재시도: %s", RETRY_DELAY_SECONDS, exc
