@@ -133,10 +133,23 @@ def test_allowlist_python_entries_are_the_only_arbitrary_code_paths():
     assert bash == {
         "Bash(uv run thesis-translate:*)",
         "Bash(pdftotext:*)",
+        "Bash(pdfinfo:*)",
         "Bash(head:*)",
         "Bash(uv run python:*)",
         "Bash(python3:*)",
     }
+
+
+def test_prompt_lists_allowed_bash_and_says_denials_are_not_fatal():
+    # A remote run hit denials for `pdfinfo` and `P=…; …` compound commands, then
+    # concluded Bash was off entirely and gave up before `extract`.
+    prompt = build_prompt(JOB)
+
+    for prefix in ("uv run thesis-translate", "pdftotext", "pdfinfo", "head"):
+        assert f"`{prefix}`" in prompt
+    assert "one plain command per call" in prompt
+    assert "denied" in prompt
+    assert "do not stop" in prompt
 
 
 def test_prompt_names_skill_pdf_and_stem_and_forbids_glossary_edits():
@@ -292,6 +305,26 @@ def test_missing_translation_file_is_reported_with_claude_report(tmp_path):
     assert len(run.calls) == 1
     assert notifier.documents == []
     assert "스캔본이라 중단했습니다." in notifier.messages[-1][1]
+
+
+def test_permission_denials_are_logged_with_their_commands(tmp_path, caplog):
+    # A bare count told the operator nothing about which step the allowlist blocked.
+    secret = "sk-ant-oat01-secret"
+    denials = [
+        {"tool_name": "Bash", "tool_input": {"command": 'pdfinfo "x.pdf"'}},
+        {"tool_name": "Bash", "tool_input": {"command": f"echo {secret}"}},
+        {"tool_name": "WebFetch", "tool_input": {"url": "https://example.com"}},
+    ]
+    run = FakeRun(_claude_ok("중단", permission_denials=denials))
+    runner, _ = _runner(tmp_path, run, env={"CLAUDE_CODE_OAUTH_TOKEN": secret})
+
+    with caplog.at_level("INFO", logger="src.bot.runner"):
+        runner(JOB)
+
+    log = caplog.text
+    assert 'Bash: pdfinfo "x.pdf"' in log
+    assert "WebFetch" in log
+    assert secret not in log
 
 
 def test_oversized_translation_is_not_uploaded(tmp_path, monkeypatch):

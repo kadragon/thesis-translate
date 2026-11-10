@@ -38,6 +38,7 @@ ALLOWED_TOOLS = (
     "TodoWrite",
     "Bash(uv run thesis-translate:*)",
     "Bash(pdftotext:*)",
+    "Bash(pdfinfo:*)",
     "Bash(head:*)",
     # Arbitrary code: the skill's UTF-8 bulk edits and the kr-style audit need
     # Python. Acceptable only because the bot runs in a container.
@@ -112,6 +113,7 @@ MAX_MESSAGE_CHARS = 4000
 SECRET_ENV_KEYS = ("CLAUDE_CODE_OAUTH_TOKEN", "TELEGRAM_BOT_TOKEN", "ANTHROPIC_API_KEY")
 _TOKEN_PATTERN = re.compile(r"sk-ant-[\w-]+")
 _REDACTED = "[비밀값 가림]"
+_DENIAL_LOG_CHARS = 300
 _REAP_ATTEMPTS = 20
 _REAP_INTERVAL_SECONDS = 0.05
 
@@ -138,6 +140,11 @@ This is an unattended run started from the Telegram bot; nobody can answer quest
 - Decide --start-page and --first-pdf-page yourself from the PDF.
 - Do not edit glossary.json; list suggested additions in your final message instead.
 - Skip the optional dual file.
+- Bash runs only commands starting with `uv run thesis-translate`, `pdftotext`,
+  `pdfinfo`, `head`, `uv run python`, or `python3`. Use one plain command per call:
+  no `;`, `&&`, or variable assignments (piping into `head` is fine). Use Read,
+  Glob, and Grep instead of `ls`, `cat`, or `grep`. If a command is denied,
+  rewrite it in an allowed form and continue; do not stop the job over a denial.
 - If the PDF is a scan or cannot be translated, stop and explain why.
 - Your final message is the step-8 report, in Korean, at most 15 lines.
 """
@@ -373,6 +380,17 @@ class ClaudeRunner:
                 text = text.replace(value, _REDACTED)
         return _TOKEN_PATTERN.sub(_REDACTED, text)
 
+    def _describe(self, denial: Any) -> str:
+        """``Tool: command`` for one ``permission_denials`` entry, redacted, clipped."""
+        if not isinstance(denial, dict):
+            return self._redact(str(denial))[:_DENIAL_LOG_CHARS]
+        tool = str(denial.get("tool_name") or "?")
+        tool_input = denial.get("tool_input")
+        detail = tool_input.get("command") if isinstance(tool_input, dict) else None
+        if detail is None:
+            detail = json.dumps(tool_input, ensure_ascii=False)
+        return self._redact(f"{tool}: {detail}")[:_DENIAL_LOG_CHARS]
+
     def _send(self, job: Job, text: str) -> None:
         """Best effort: a failed notice must not drop or abort the job."""
         try:
@@ -422,6 +440,8 @@ class ClaudeRunner:
             result.get("total_cost_usd", "?"),
             len(result.get("permission_denials") or []),
         )
+        for denial in result.get("permission_denials") or []:
+            logger.info("작업 %s: 거부됨 %s", job.job_id, self._describe(denial))
         if proc.returncode != 0 or result.get("is_error") or not result:
             self._fail(job, report or proc.stderr or f"종료 코드 {proc.returncode}")
             return None
