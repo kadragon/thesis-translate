@@ -317,7 +317,7 @@ def test_missing_translation_file_is_reported_with_claude_report(tmp_path):
 
 def test_permission_denials_are_logged_with_their_commands(tmp_path, caplog):
     # A bare count told the operator nothing about which step the allowlist blocked.
-    secret = "sk-ant-oat01-secret"
+    secret = "oauth-value-for-denial-test"
     denials = [
         {"tool_name": "Bash", "tool_input": {"command": 'pdfinfo "x.pdf"'}},
         {"tool_name": "Bash", "tool_input": {"command": f"echo {secret}"}},
