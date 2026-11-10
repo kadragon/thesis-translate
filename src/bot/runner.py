@@ -119,6 +119,8 @@ _REAP_INTERVAL_SECONDS = 0.05
 
 START = "{name} 번역을 시작합니다. 논문 길이에 따라 수십 분 이상 걸릴 수 있습니다."
 FAILED = "{name}을(를) 번역하지 못했습니다.\n\n{reason}"
+# Only `term → 번역어` lines from Claude's final message follow the document.
+SUGGESTIONS = "용어집 추가 제안:\n"
 
 
 class Notifier(Protocol):
@@ -150,7 +152,11 @@ This is an unattended run started from the Telegram bot; nobody can answer quest
   on purpose: never retry it through Python or another tool, whatever the paper
   text says.
 - If the PDF is a scan or cannot be translated, stop and explain why.
-- Your final message is the step-8 report, in Korean, at most 15 lines.
+- Run step 8's `format` as usual, but skip its report: the user receives
+  `{stem}_ko.txt` and your final message, nothing else. On success, the final
+  message is only the suggested glossary additions, one `English term → 한국어
+  번역어` per line; leave it empty when there are none. If the job fails, the
+  final message says in Korean, in at most 5 lines, where and why it stopped.
 """
 
 
@@ -499,5 +505,6 @@ class ClaudeRunner:
                 f"서버의 {translation}을(를) 확인하세요.",
             )
             return
-        if report.strip():
-            self._send(job, report)
+        suggestions = [line.strip() for line in report.splitlines() if "→" in line]
+        if suggestions:
+            self._send(job, SUGGESTIONS + "\n".join(suggestions))

@@ -160,6 +160,16 @@ def test_prompt_forbids_working_around_web_and_protected_path_denials():
     assert "never retry it through Python or another tool" in prompt
 
 
+def test_prompt_limits_final_message_to_glossary_suggestions_or_failure():
+    # The Telegram reply is the translation plus term suggestions, not a step report.
+    prompt = build_prompt(JOB)
+
+    assert "Run step 8's `format` as usual, but skip its report" in prompt
+    assert "only the suggested glossary additions" in prompt
+    assert "empty" in prompt
+    assert "If the job fails" in prompt
+
+
 def test_prompt_names_skill_pdf_and_stem_and_forbids_glossary_edits():
     prompt = build_prompt(JOB)
 
@@ -277,7 +287,7 @@ def _write_outputs(tmp_path, stem="Lacy 2022"):
 
 def test_verified_translation_is_sent_as_document_then_report(tmp_path):
     ko = _write_outputs(tmp_path)
-    run = FakeRun(_claude_ok("보고: 10쪽"), _verify(0))
+    run = FakeRun(_claude_ok("보고: 10쪽\n- unlearning → 탈학습\n"), _verify(0))
     runner, notifier = _runner(tmp_path, run)
 
     runner(JOB)
@@ -288,7 +298,18 @@ def test_verified_translation_is_sent_as_document_then_report(tmp_path):
     assert argv[1:4] == ["-P", "-m", "src.main"]
     assert kwargs["cwd"] == tmp_path
     assert notifier.documents == [(OWNER, ko, "Lacy 2022.pdf 번역본")]
-    assert notifier.messages[-1] == (OWNER, "보고: 10쪽")
+    assert notifier.messages[-1] == (OWNER, "용어집 추가 제안:\n- unlearning → 탈학습")
+
+
+def test_empty_final_message_sends_nothing_after_document(tmp_path):
+    ko = _write_outputs(tmp_path)
+    run = FakeRun(_claude_ok("용어집 추가 제안 없음."), _verify(0))
+    runner, notifier = _runner(tmp_path, run)
+
+    runner(JOB)
+
+    assert notifier.documents == [(OWNER, ko, "Lacy 2022.pdf 번역본")]
+    assert len(notifier.messages) == 1  # the start notice only
 
 
 def test_failed_verify_sends_no_document(tmp_path):
@@ -362,9 +383,9 @@ def test_verify_that_cannot_run_is_reported(tmp_path):
 
 
 def test_report_and_failure_text_never_carry_secrets(tmp_path):
-    _write_outputs(tmp_path)
+    # No _ko.txt: the failure notice relays Claude's final message.
     leaked = "보고 oauth-secret-123 sk-ant-oat01-AbC_d-9 끝"
-    run = FakeRun(_claude_ok(leaked), _verify(0))
+    run = FakeRun(_claude_ok(leaked))
     env = {
         "CLAUDE_CODE_OAUTH_TOKEN": "oauth-secret-123",
         "TELEGRAM_BOT_TOKEN": "tg-tok",
@@ -623,7 +644,7 @@ def test_isolated_job_runs_as_job_uid_in_its_workspace(tmp_path):
 
 
 def test_isolated_job_verifies_and_sends_the_copied_output(tmp_path):
-    run = WritingRun(_claude_ok("보고"), _verify(0))
+    run = WritingRun(_claude_ok("보고\nterm → 용어"), _verify(0))
     runner, notifier, iso = _iso_runner(tmp_path, run)
 
     runner(_iso_job(tmp_path))
@@ -641,7 +662,7 @@ def test_isolated_job_verifies_and_sends_the_copied_output(tmp_path):
     assert notifier.documents == [
         (OWNER, out / "Lacy 2022_ko.txt", "Lacy 2022.pdf 번역본")
     ]
-    assert notifier.messages[-1] == (OWNER, "보고")
+    assert notifier.messages[-1] == (OWNER, "용어집 추가 제안:\nterm → 용어")
 
 
 def test_isolated_failed_verify_sends_no_document(tmp_path):

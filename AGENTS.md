@@ -59,6 +59,8 @@ Updates (newest first, keep ~5).
 
 ## Updates
 
+- 2026-11-10: A successful bot job replies with `_ko.txt` plus suggested glossary additions
+  only; the step-8 report is skipped.
 - 2026-11-10: Bot allowlist adds `Bash(pdfinfo:*)`; the prompt lists the allowed Bash
   prefixes and says a denial is not a reason to stop; each denied call is logged.
 - 2026-11-09: In root mode the bot refuses to start without `/opt/claude-home/.claude`;
@@ -68,6 +70,3 @@ Updates (newest first, keep ~5).
   `/app/outputs/<stem>/` (runbook has the manual check).
 - 2026-11-09: Bot runner has a root mode (`src/bot/workspace.py`): per-job UID and
   `/jobs/<id>` workspace, outputs copied to root-owned `outputs/<stem>/`.
-- 2026-11-09: `extract` keeps a line-end hyphen when the compound appears whole elsewhere in
-  the paper or in `glossary.json`; `verify`/`extract` read `glossary.json` from the project
-  root, not the CWD.
