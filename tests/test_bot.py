@@ -3,6 +3,7 @@
 import io
 import json
 from unittest.mock import patch
+from urllib.error import URLError
 
 import pytest
 
@@ -249,6 +250,31 @@ def test_client_get_file_retries_once_on_timeout():
 
     assert path == "documents/a.pdf"
     assert urlopen.call_count == 2  # noqa: PLR2004 - first try + one retry
+
+
+def test_client_get_file_retries_once_on_connect_timeout():
+    ok = _response({"ok": True, "result": {"file_path": "documents/a.pdf"}})
+    with patch(
+        "src.bot.telegram_api.urlopen",
+        side_effect=[URLError(TimeoutError("timed out")), ok],
+    ) as urlopen:
+        path = TelegramClient("t0k").get_file("F1")
+
+    assert path == "documents/a.pdf"
+    assert urlopen.call_count == 2  # noqa: PLR2004 - first try + one retry
+
+
+def test_client_get_file_does_not_retry_other_url_errors():
+    with (
+        patch(
+            "src.bot.telegram_api.urlopen",
+            side_effect=URLError(ConnectionRefusedError("refused")),
+        ) as urlopen,
+        pytest.raises(URLError),
+    ):
+        TelegramClient("t0k").get_file("F1")
+
+    assert urlopen.call_count == 1
 
 
 def test_client_get_file_raises_after_second_timeout():

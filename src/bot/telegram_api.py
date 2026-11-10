@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 from typing import TYPE_CHECKING, Any
+from urllib.error import URLError
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
@@ -65,7 +66,10 @@ class TelegramClient:
         payload = {"file_id": file_id}
         try:
             result = self._call("getFile", payload, _REQUEST_TIMEOUT_SECONDS)
-        except TimeoutError:
+        except (TimeoutError, URLError) as exc:
+            # urllib wraps connect/handshake timeouts in URLError(reason=TimeoutError).
+            if isinstance(exc, URLError) and not isinstance(exc.reason, TimeoutError):
+                raise
             # getFile is idempotent, so one retry absorbs a transient stall.
             result = self._call("getFile", payload, _REQUEST_TIMEOUT_SECONDS)
         return str(result["file_path"])
