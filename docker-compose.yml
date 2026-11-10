@@ -1,0 +1,7 @@
+services:
+  thesis-bot:
+    build: .
+    # No `init: true`: the bot must stay PID 1 and handle SIGTERM itself; an init
+    # process would hold the bot token in a readable environ (docs/runbook.md).
+    env_file: .env
+    restart: unless-stopped

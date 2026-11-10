@@ -48,14 +48,20 @@ from the directory the bot was started in (start it from the repo root).
 ```bash
 cp .env.example .env        # fill in the three values; stays on the host
 claude setup-token          # on a logged-in machine → CLAUDE_CODE_OAUTH_TOKEN
-docker build -t thesis-translate-bot .
-docker run -d --name thesis-bot --restart unless-stopped --env-file .env thesis-translate-bot
-docker logs -f thesis-bot   # job lines: exit code, cost, 거부된 도구 호출 N건
+docker compose up -d --build
+docker compose logs -f thesis-bot   # job lines: exit code, cost, 거부된 도구 호출 N건
 ```
 
-Update: `git pull`, rebuild, `docker rm -f thesis-bot`, run again. A rebuild also discards
-anything a job wrote, since outputs live only in the container (they reach the user via
-Telegram; `docker cp thesis-bot:/app/outputs/<stem>/ .` before removing it if needed).
+`docker-compose.yml` mirrors a plain `docker run --env-file .env --restart unless-stopped`
+and deliberately sets no `init` (see below). Every redeploy recreates the container and
+discards anything a job wrote, since outputs live only in the container (they reach the
+user via Telegram; `docker compose cp thesis-bot:/app/outputs/<stem>/ .` first if needed).
+
+Deployment is manual: run `scripts/deploy.sh` on the server checkout. It refuses to run
+off `main`, with local changes, or without `.env`; then pulls `main`, stops the bot
+(`docker compose down`, plus the pre-Compose `thesis-bot` container if present — only one
+bot may poll a token), rebuilds, and starts it. The bot is down for the whole build. Then
+check `docker compose logs --tail=100 thesis-bot` and send the bot a message.
 
 What the image guarantees:
 
