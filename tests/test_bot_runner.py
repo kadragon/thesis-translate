@@ -152,6 +152,14 @@ def test_prompt_lists_allowed_bash_and_says_denials_are_not_fatal():
     assert "do not stop" in prompt
 
 
+def test_prompt_forbids_working_around_web_and_protected_path_denials():
+    # "Rephrase a denied command" must not read as "reach the same goal via python3":
+    # paper text is untrusted (golden principle 3).
+    prompt = build_prompt(JOB)
+
+    assert "never retry it through Python or another tool" in prompt
+
+
 def test_prompt_names_skill_pdf_and_stem_and_forbids_glossary_edits():
     prompt = build_prompt(JOB)
 
