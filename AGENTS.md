@@ -59,6 +59,8 @@ Updates (newest first, keep ~5).
 
 ## Updates
 
+- 2026-11-10: `getFile`/`sendMessage` use a 30 s socket timeout (was the 10 s long-poll
+  slack); `getFile` retries once on `TimeoutError`.
 - 2026-11-10: A successful bot job replies with `_ko.txt` plus suggested glossary additions
   only; the step-8 report is skipped.
 - 2026-11-10: Bot allowlist adds `Bash(pdfinfo:*)`; the prompt lists the allowed Bash
@@ -68,5 +70,3 @@ Updates (newest first, keep ~5).
 - 2026-11-09: The image runs the bot as root, so every container job is isolated; `claude`
   lives in `/opt/claude/bin`, the HOME template in `/opt/claude-home`, outputs in
   `/app/outputs/<stem>/` (runbook has the manual check).
-- 2026-11-09: Bot runner has a root mode (`src/bot/workspace.py`): per-job UID and
-  `/jobs/<id>` workspace, outputs copied to root-owned `outputs/<stem>/`.
