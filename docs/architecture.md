@@ -46,7 +46,10 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
   with a Korean error above that instead of failing silently.
 - **Queue**: one translation at a time; a paper takes minutes to hours on one subscription.
   The skill's file contract (`<stem>_*.txt`, `glossary.json`) resolves against the CWD: the
-  job's own workdir in root mode, the repo root otherwise. Acknowledge receipt and queue position immediately.
+  job's own workdir in root mode, the repo root otherwise. The intake reply is the only
+  message before work starts: receipt, page count with an estimate (`pdfinfo`,
+  `MINUTES_PER_PAGE`), and either "starting now" or the queue position. Only a job that
+  waited (`Job.waited`) gets a separate start notice from the runner.
 - **Claude invocation** (`src/bot/runner.py`): `build_claude_argv()` is the single argv
   source — `claude -p --output-format json --permission-mode dontAsk
   --no-session-persistence --allowedTools … --disallowedTools WebFetch WebSearch`; the prompt

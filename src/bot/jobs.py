@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -22,6 +22,8 @@ class Job:
     file_name: str
     stem: str
     pdf_path: Path
+    # Queued behind another job, so the intake reply could not say "starting now".
+    waited: bool = False
 
 
 class JobQueue:
@@ -36,8 +38,8 @@ class JobQueue:
     def put(self, job: Job) -> int:
         """Enqueue and return the 1-based position, counting the running job."""
         with self._cond:
-            self._jobs.append(job)
-            position = len(self._jobs) + (1 if self._running else 0)
+            position = len(self._jobs) + 1 + (1 if self._running else 0)
+            self._jobs.append(replace(job, waited=position > 1))
             self._cond.notify()
         return position
 

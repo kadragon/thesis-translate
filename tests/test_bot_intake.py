@@ -1,12 +1,21 @@
 """Tests for PDF intake (download, stem, collisions) and the single-worker queue."""
 
 import http.client
+import os
+import subprocess
 import threading
 from pathlib import Path
 
 import pytest
 
-from src.bot.intake import DOWNLOAD_FAILED, NOT_PDF_CONTENT, Intake, sanitize_stem
+from src.bot.intake import (
+    DOWNLOAD_FAILED,
+    NOBODY,
+    NOT_PDF_CONTENT,
+    Intake,
+    count_pages,
+    sanitize_stem,
+)
 from src.bot.jobs import Job, JobQueue
 
 OWNER = 111
@@ -39,8 +48,13 @@ def _job(stem="paper", job_id="j1"):
     )
 
 
-def _intake(
-    tmp_path, downloader=None, queue=None, ids=("j1", "j2", "j3"), outputs=None
+def _intake(  # noqa: PLR0913 - test helper defaults
+    tmp_path,
+    downloader=None,
+    queue=None,
+    ids=("j1", "j2", "j3"),
+    outputs=None,
+    pages=None,
 ):
     queue = queue or JobQueue(runner=lambda _job: None)
     id_iter = iter(ids)
@@ -51,6 +65,7 @@ def _intake(
         workdir=tmp_path,
         new_id=lambda: next(id_iter),
         outputs=outputs,
+        count_pages=lambda _path: pages,
     )
     return intake, queue
 
@@ -90,7 +105,7 @@ def test_accept_downloads_to_inbox_and_enqueues(tmp_path):
         Job("j1", OWNER, "Lacy 2022.pdf", "Lacy 2022", pdf),
     ]
     assert "Lacy 2022.pdf" in reply
-    assert "곧 번역을 시작합니다" in reply
+    assert "바로 번역을 시작합니다" in reply
 
 
 def test_second_job_reply_says_how_many_are_ahead(tmp_path):
@@ -100,6 +115,91 @@ def test_second_job_reply_says_how_many_are_ahead(tmp_path):
     reply = intake.accept(OWNER, _doc("b.pdf"))
 
     assert "앞에 1건" in reply
+    assert "알려 드립니다" in reply
+
+
+def test_reply_gives_page_count_and_time_range(tmp_path):
+    intake, _ = _intake(tmp_path, pages=8)
+
+    reply = intake.accept(OWNER, _doc())
+
+    assert "8쪽" in reply
+    assert "약 3~8분" in reply
+
+
+def test_reply_omits_estimate_when_page_count_is_unknown(tmp_path):
+    intake, _ = _intake(tmp_path, pages=None)
+
+    reply = intake.accept(OWNER, _doc())
+
+    assert "쪽" not in reply
+    assert "분" not in reply.replace("분량", "")
+
+
+def test_first_job_is_not_marked_waited_but_a_queued_one_is():
+    queue = JobQueue(runner=lambda _job: None)
+    queue.put(_job("a"))
+    queue.put(_job("b", "j2"))
+
+    assert [job.waited for job in queue.pending()] == [False, True]
+
+
+def test_count_pages_reads_pdfinfo(tmp_path, monkeypatch):
+    def fake_run(argv, **_kwargs):
+        assert argv[0] == "pdfinfo"
+        stdout = "Title: x\nPages:          12\n"
+        return subprocess.CompletedProcess(argv, 0, stdout, "")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert count_pages(tmp_path / "a.pdf") == 12  # noqa: PLR2004
+
+
+@pytest.mark.parametrize("euid", [0, 1000])
+def test_count_pages_runs_without_secrets_or_root(tmp_path, monkeypatch, euid):
+    # pdfinfo parses an untrusted upload: no bot/Claude tokens, no root.
+    seen: dict = {}
+
+    def fake_run(argv, **kwargs):
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(argv, 0, "Pages: 3\n", "")
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tg-tok")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-tok")
+    monkeypatch.setattr(os, "geteuid", lambda: euid)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert count_pages(tmp_path / "a.pdf") == 3  # noqa: PLR2004
+    assert set(seen["env"]) <= {"PATH", "LC_ALL"}
+    if euid == 0:
+        assert (seen["user"], seen["group"], seen["extra_groups"]) == (
+            NOBODY,
+            NOBODY,
+            [],
+        )
+    else:
+        assert "user" not in seen
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad"),
+        subprocess.CompletedProcess([], 1, "", "Syntax Error"),
+        subprocess.CompletedProcess([], 0, "Title: x\n", ""),
+        subprocess.TimeoutExpired("pdfinfo", 10),
+        FileNotFoundError("pdfinfo"),
+    ],
+)
+def test_count_pages_returns_none_when_unknown(tmp_path, monkeypatch, outcome):
+    def fake_run(_argv, **_kwargs):
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert count_pages(tmp_path / "a.pdf") is None
 
 
 def test_non_pdf_content_is_deleted_and_not_queued(tmp_path):
