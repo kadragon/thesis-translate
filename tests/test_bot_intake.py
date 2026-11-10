@@ -1,6 +1,7 @@
 """Tests for PDF intake (download, stem, collisions) and the single-worker queue."""
 
 import http.client
+import os
 import subprocess
 import threading
 from pathlib import Path
@@ -9,6 +10,7 @@ import pytest
 
 from src.bot.intake import (
     DOWNLOAD_FAILED,
+    NOBODY,
     NOT_PDF_CONTENT,
     Intake,
     count_pages,
@@ -153,9 +155,36 @@ def test_count_pages_reads_pdfinfo(tmp_path, monkeypatch):
     assert count_pages(tmp_path / "a.pdf") == 12  # noqa: PLR2004
 
 
+@pytest.mark.parametrize("euid", [0, 1000])
+def test_count_pages_runs_without_secrets_or_root(tmp_path, monkeypatch, euid):
+    # pdfinfo parses an untrusted upload: no bot/Claude tokens, no root.
+    seen: dict = {}
+
+    def fake_run(argv, **kwargs):
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(argv, 0, "Pages: 3\n", "")
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tg-tok")
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "oauth-tok")
+    monkeypatch.setattr(os, "geteuid", lambda: euid)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    assert count_pages(tmp_path / "a.pdf") == 3  # noqa: PLR2004
+    assert set(seen["env"]) <= {"PATH", "LC_ALL"}
+    if euid == 0:
+        assert (seen["user"], seen["group"], seen["extra_groups"]) == (
+            NOBODY,
+            NOBODY,
+            [],
+        )
+    else:
+        assert "user" not in seen
+
+
 @pytest.mark.parametrize(
     "outcome",
     [
+        UnicodeDecodeError("utf-8", b"\xff", 0, 1, "bad"),
         subprocess.CompletedProcess([], 1, "", "Syntax Error"),
         subprocess.CompletedProcess([], 0, "Title: x\n", ""),
         subprocess.TimeoutExpired("pdfinfo", 10),

@@ -5,6 +5,7 @@ from __future__ import annotations
 import http.client
 import logging
 import math
+import os
 import re
 import subprocess
 from typing import TYPE_CHECKING, Any, Protocol
@@ -33,6 +34,8 @@ _UNSAFE = re.compile(r"[^\w .,()\-]")
 _DEFAULT_STEM = "paper"
 _PAGES = re.compile(r"^Pages:\s+(\d+)\s*$", re.MULTILINE)
 PDFINFO_TIMEOUT_SECONDS = 10
+# pdfinfo parses an untrusted upload: as root, drop to nobody first.
+NOBODY = 65534
 # Minutes per page, low and high. Calibrated on one 8-page paper (~2.5 min);
 # the high end leaves room for dense or table-heavy papers.
 MINUTES_PER_PAGE = (0.3, 1.0)
@@ -56,15 +59,25 @@ def sanitize_stem(file_name: str) -> str:
 
 def count_pages(pdf: Path) -> int | None:
     """Page count from ``pdfinfo``, or ``None`` when it cannot be read."""
+    # No inherited secrets (golden principle 4); C locale keeps "Pages:" stable.
+    env = {"PATH": os.environ.get("PATH", os.defpath), "LC_ALL": "C"}
+    drop: dict[str, Any] = (
+        {"user": NOBODY, "group": NOBODY, "extra_groups": []}
+        if os.geteuid() == 0
+        else {}
+    )
     try:
         proc = subprocess.run(
             ["pdfinfo", str(pdf)],  # poppler-utils (Dockerfile)
             capture_output=True,
             text=True,
+            errors="replace",
             timeout=PDFINFO_TIMEOUT_SECONDS,
+            env=env,
             check=False,
+            **drop,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except (OSError, ValueError, subprocess.TimeoutExpired):
         return None
     match = _PAGES.search(proc.stdout or "") if proc.returncode == 0 else None
     return int(match.group(1)) if match else None
