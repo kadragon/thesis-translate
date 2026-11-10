@@ -1,6 +1,7 @@
 """Tests for the headless ``claude -p`` job runner."""
 
 import contextlib
+import inspect
 import json
 import os
 import signal
@@ -26,6 +27,7 @@ from src.bot.workspace import Isolation, JobSpace
 OWNER = 111
 TIMEOUT_BOUND_SECONDS = 10
 JOB = Job("j1", OWNER, "Lacy 2022.pdf", "Lacy 2022", Path("inbox/Lacy 2022.pdf"))
+RUN_SIGNATURE = inspect.signature(run_in_group)
 
 
 class FakeNotifier:
@@ -48,6 +50,8 @@ class FakeRun:
         self.calls: list[tuple[list[str], dict]] = []
 
     def __call__(self, argv, **kwargs):
+        # Reject any call the real default runner would reject (e.g. no ``input``).
+        RUN_SIGNATURE.bind(argv, **kwargs)
         self.calls.append((argv, kwargs))
         result = self.results.pop(0)
         if isinstance(result, BaseException):

@@ -468,6 +468,7 @@ class ClaudeRunner:
             verify = self._run(
                 [sys.executable, "-P", "-m", "src.main", "verify", source, target],
                 cwd=place.cwd,
+                input="",
                 capture_output=True,
                 text=True,
                 timeout=VERIFY_TIMEOUT_SECONDS,
