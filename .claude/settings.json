@@ -8,5 +8,10 @@
       "Bash(git push -f*)",
       "Bash(rm -rf*)"
     ]
+  },
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": false,
+    "typescript-lsp@claude-plugins-official": false,
+    "playwright@claude-plugins-official": false
   }
 }
