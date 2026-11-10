@@ -48,6 +48,7 @@ from the directory the bot was started in (start it from the repo root).
 ```bash
 cp .env.example .env        # fill in the three values; stays on the host
 claude setup-token          # on a logged-in machine → CLAUDE_CODE_OAUTH_TOKEN
+test -f glossary.json || echo '[]' > glossary.json; chmod 0644 glossary.json   # bind-mounted
 docker compose up -d --build
 docker compose logs -f thesis-bot   # job lines: exit code, cost, 거부된 도구 호출 N건
 ```
@@ -86,8 +87,10 @@ What the image guarantees:
 - `glossary.json` is bind-mounted from the server checkout (`docker-compose.yml`) so terms
   added over Telegram survive a rebuild; `deploy.sh` creates it as `[]` when missing (a
   missing mount source would become a directory) and sets 0644, so jobs can read but not
-  write it. The bot rewrites it in place (same inode); an atomic rename would not reach the
-  host file.
+  write it (Compose refuses to start rather than create a missing source). The bot rewrites
+  it in place (same inode). Edit it on the host in place too (`$EDITOR` without atomic
+  save, or `cat new > glossary.json`); a rename-based save leaves the container on the old
+  inode until `docker compose restart thesis-bot`.
 - Workdir steering files are neutralized: root-owned `CLAUDE.local.md`, `.python-version`, `UV_NO_CONFIG=1` (ignores `uv.toml`),
   `--strict-mcp-config` (ignores `.mcp.json`), and `verify` runs with `python -P` (a dropped
   `json.py` cannot shadow stdlib).

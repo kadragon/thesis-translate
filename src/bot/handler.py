@@ -19,7 +19,7 @@ PDF_MIME = "application/pdf"
 MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 HINT = (
     "번역할 논문 PDF 파일을 보내 주세요.\n\n"
-    "용어집: `영어 용어 → 번역어` 줄을 보내면 추가합니다.\n"
+    "용어집: 영어 용어 → 번역어 형식의 줄을 보내면 추가합니다.\n"
     "/glossary 목록 보기\n"
     "/update 영어 용어 → 새 번역어: 번역어 변경\n"
     "/delete 영어 용어: 삭제"

@@ -1,6 +1,7 @@
 """Tests for glossary editing over Telegram: parsing, store, command replies."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -8,7 +9,9 @@ from src.bot.glossary import (
     EMPTY,
     MAX_MESSAGE_CHARS,
     READ_FAILED,
+    WRITE_FAILED,
     Glossary,
+    handle_glossary_messages,
     handle_glossary_text,
     parse_pairs,
 )
@@ -195,3 +198,70 @@ def test_delete_command_accepts_pasted_arrow_lines(gpath):
 
 def test_unknown_command_is_not_handled(gpath):
     assert handle_glossary_text("/start", Glossary(gpath)) is None
+
+
+def test_edit_replies_are_split_under_the_message_limit(tmp_path):
+    path = tmp_path / "g.json"
+    count = 50
+    _write(path, [{"term": f"t{i}", "translation": "가" * 100} for i in range(count)])
+    text = "/delete " + "\n".join(f"t{i}" for i in range(count))
+
+    replies = handle_glossary_messages(text, Glossary(path))
+
+    assert replies is not None
+    assert len(replies) > 1
+    assert all(len(chunk) <= MAX_MESSAGE_CHARS for chunk in replies)
+    assert _read(path) == []
+
+
+def test_write_failure_restores_file_and_says_save_failed(gpath, monkeypatch, caplog):
+    original = gpath.read_text(encoding="utf-8")
+    real_write = Path.write_text
+    calls = []
+
+    def failing_write(self, data, *args, **kwargs):
+        calls.append(data)
+        if len(calls) == 1:
+            real_write(self, data[:5], *args, **kwargs)
+            raise OSError(28, "No space left on device")
+        return real_write(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", failing_write)
+
+    reply = handle_glossary_text("deskilling → 탈숙련", Glossary(gpath))
+
+    assert reply == WRITE_FAILED
+    assert gpath.read_text(encoding="utf-8") == original
+    assert "용어집" in caplog.text
+
+
+def test_edits_keep_extra_keys_and_case_duplicates(tmp_path):
+    path = tmp_path / "g.json"
+    entries = [
+        {"term": "unlearning", "translation": "언러닝", "note": "keep"},
+        {"term": "Unlearning", "translation": "탈학습"},
+    ]
+    _write(path, entries)
+
+    Glossary(path).add([("deskilling", "탈숙련")])
+
+    assert _read(path) == [*entries, {"term": "deskilling", "translation": "탈숙련"}]
+
+
+def test_parse_pairs_strips_list_markers_and_markdown():
+    pairs, bad = parse_pairs(
+        "- **frames of reference** → 준거 틀\n1. `deskilling` → `탈숙련`\n• a → *가*"
+    )
+
+    assert pairs == [
+        ("frames of reference", "준거 틀"),
+        ("deskilling", "탈숙련"),
+        ("a", "가"),
+    ]
+    assert bad == []
+
+
+def test_delete_strips_markdown_from_terms(gpath):
+    handle_glossary_text("/delete - **unlearning**", Glossary(gpath))
+
+    assert _read(gpath) == []

@@ -6,6 +6,11 @@ services:
     env_file: .env
     # The bot edits the glossary from Telegram; keep it on the host so a rebuild
     # does not drop it. Writes are in place (same inode), so a file mount works.
+    # No auto-created host path: a missing file must fail, not become a directory.
     volumes:
-      - ./glossary.json:/app/glossary.json
+      - type: bind
+        source: ./glossary.json
+        target: /app/glossary.json
+        bind:
+          create_host_path: false
     restart: unless-stopped

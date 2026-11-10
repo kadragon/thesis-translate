@@ -108,6 +108,10 @@ def test_pdf_over_download_limit_is_rejected_before_download():
     assert client.sent == [(OWNER, TOO_LARGE)]
 
 
+def test_hint_has_no_markdown_backticks():
+    assert "`" not in HINT
+
+
 def test_text_message_gets_hint():
     client, _ = _handle(
         {"update_id": 1, "message": {"chat": {"id": OWNER}, "text": "안녕"}}
