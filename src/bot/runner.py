@@ -117,7 +117,7 @@ _DENIAL_LOG_CHARS = 300
 _REAP_ATTEMPTS = 20
 _REAP_INTERVAL_SECONDS = 0.05
 
-START = "{name} 번역을 시작합니다. 논문 길이에 따라 수십 분 이상 걸릴 수 있습니다."
+START = "{name} 차례가 되어 번역을 시작합니다."
 FAILED = "{name}을(를) 번역하지 못했습니다.\n\n{reason}"
 # Only `term → 번역어` lines from Claude's final message follow the document.
 SUGGESTIONS = "용어집 추가 제안:\n"
@@ -337,7 +337,8 @@ class ClaudeRunner:
         self._isolation = isolation
 
     def __call__(self, job: Job) -> None:
-        self._send(job, START.format(name=job.file_name))
+        if job.waited:  # otherwise the intake reply already said it starts now
+            self._send(job, START.format(name=job.file_name))
         if self._isolation is not None:
             self._run_isolated(job, self._isolation)
             return

@@ -59,6 +59,8 @@ Updates (newest first, keep ~5).
 
 ## Updates
 
+- 2026-11-10: Intake sends one reply with page count and an estimated time; the runner's
+  start notice goes only to jobs that waited in the queue.
 - 2026-11-10: `getFile`/`sendMessage` use a 30 s socket timeout (was the 10 s long-poll
   slack); `getFile` retries once on `TimeoutError`.
 - 2026-11-10: A successful bot job replies with `_ko.txt` plus suggested glossary additions
@@ -67,6 +69,3 @@ Updates (newest first, keep ~5).
   prefixes and says a denial is not a reason to stop; each denied call is logged.
 - 2026-11-09: In root mode the bot refuses to start without `/opt/claude-home/.claude`;
   a job timeout no longer waits on `setsid`'d descendants holding the output pipes.
-- 2026-11-09: The image runs the bot as root, so every container job is isolated; `claude`
-  lives in `/opt/claude/bin`, the HOME template in `/opt/claude-home`, outputs in
-  `/app/outputs/<stem>/` (runbook has the manual check).

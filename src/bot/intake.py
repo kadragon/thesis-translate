@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import http.client
 import logging
+import math
 import re
+import subprocess
 from typing import TYPE_CHECKING, Any, Protocol
 from uuid import uuid4
 
@@ -29,6 +31,11 @@ _PDF_HEADER = b"%PDF-"
 _HEADER_WINDOW = 1024
 _UNSAFE = re.compile(r"[^\w .,()\-]")
 _DEFAULT_STEM = "paper"
+_PAGES = re.compile(r"^Pages:\s+(\d+)\s*$", re.MULTILINE)
+PDFINFO_TIMEOUT_SECONDS = 10
+# Minutes per page, low and high. Calibrated on one 8-page paper (~2.5 min);
+# the high end leaves room for dense or table-heavy papers.
+MINUTES_PER_PAGE = (0.3, 1.0)
 
 
 class Downloader(Protocol):
@@ -47,6 +54,30 @@ def sanitize_stem(file_name: str) -> str:
     return stem or _DEFAULT_STEM
 
 
+def count_pages(pdf: Path) -> int | None:
+    """Page count from ``pdfinfo``, or ``None`` when it cannot be read."""
+    try:
+        proc = subprocess.run(
+            ["pdfinfo", str(pdf)],  # poppler-utils (Dockerfile)
+            capture_output=True,
+            text=True,
+            timeout=PDFINFO_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    match = _PAGES.search(proc.stdout or "") if proc.returncode == 0 else None
+    return int(match.group(1)) if match else None
+
+
+def _estimate(pages: int | None) -> str:
+    if not pages:
+        return ""
+    low, high = (max(1, math.ceil(pages * rate)) for rate in MINUTES_PER_PAGE)
+    span = f"{low}분" if low == high else f"{low}~{high}분"
+    return f" {pages}쪽 분량으로 번역에 약 {span} 걸릴 것으로 보입니다."
+
+
 def _new_id() -> str:
     return uuid4().hex[:8]
 
@@ -63,6 +94,7 @@ class Intake:
         workdir: Path,
         new_id: Callable[[], str] = _new_id,
         outputs: Path | None = None,
+        count_pages: Callable[[Path], int | None] = count_pages,
     ) -> None:
         self._downloader = downloader
         self._queue = queue
@@ -70,6 +102,7 @@ class Intake:
         self._workdir = workdir
         self._new_id = new_id
         self._outputs = outputs
+        self._count_pages = count_pages
 
     def accept(self, chat_id: int, document: dict[str, Any]) -> str:
         """Return the reply text for the user."""
@@ -96,13 +129,15 @@ class Intake:
         if not is_pdf:
             pdf_path.unlink()
             return NOT_PDF_CONTENT
+        pages = self._count_pages(pdf_path)
         position = self._queue.put(Job(job_id, chat_id, file_name, stem, pdf_path))
-        logger.info("작업 %s 접수: %s (%d번째)", job_id, stem, position)
+        logger.info("작업 %s 접수: %s (%d번째, %s쪽)", job_id, stem, position, pages)
+        received = f"{file_name} 파일을 받았습니다.{_estimate(pages)}"
         if position == 1:
-            return f"{file_name} 파일을 받았습니다. 곧 번역을 시작합니다."
+            return f"{received} 바로 번역을 시작합니다."
         return (
-            f"{file_name} 파일을 받았습니다. "
-            f"앞에 {position - 1}건이 있어 차례가 되면 번역을 시작합니다."
+            f"{received} 앞에 {position - 1}건이 있어 "
+            "차례가 되면 번역을 시작하고 알려 드립니다."
         )
 
     def _free_stem(self, stem: str, job_id: str) -> str:

@@ -1,6 +1,7 @@
 """Tests for the headless ``claude -p`` job runner."""
 
 import contextlib
+import dataclasses
 import inspect
 import json
 import os
@@ -197,6 +198,16 @@ def test_runner_announces_start_and_runs_claude_from_workdir(tmp_path):
     assert kwargs["cwd"] == tmp_path
     assert kwargs["input"] == build_prompt(JOB)
     assert kwargs["timeout"] == JOB_TIMEOUT_SECONDS
+    # Intake already said translation starts now; only the failure report follows.
+    assert "번역을 시작합니다" not in notifier.messages[0][1]
+
+
+def test_waited_job_is_told_its_turn_has_come(tmp_path):
+    run = FakeRun(_claude_ok())
+    runner, notifier = _runner(tmp_path, run)
+
+    runner(dataclasses.replace(JOB, waited=True))
+
     assert "번역을 시작합니다" in notifier.messages[0][1]
 
 
@@ -313,7 +324,7 @@ def test_empty_final_message_sends_nothing_after_document(tmp_path):
     runner(JOB)
 
     assert notifier.documents == [(OWNER, ko, "Lacy 2022.pdf 번역본")]
-    assert len(notifier.messages) == 1  # the start notice only
+    assert notifier.messages == []
 
 
 def test_failed_verify_sends_no_document(tmp_path):
@@ -441,7 +452,7 @@ def test_failed_start_message_does_not_drop_the_job(tmp_path):
     notifier = FlakyNotifier(fail_first_message=True)
     runner = ClaudeRunner(notifier, workdir=tmp_path, run=run, env={})
 
-    runner(JOB)
+    runner(dataclasses.replace(JOB, waited=True))
 
     assert [argv[0] for argv, _ in run.calls] == ["claude", sys.executable]
     assert len(notifier.documents) == 1
