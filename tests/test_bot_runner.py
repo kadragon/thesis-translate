@@ -160,6 +160,16 @@ def test_prompt_forbids_working_around_web_and_protected_path_denials():
     assert "never retry it through Python or another tool" in prompt
 
 
+def test_prompt_limits_final_message_to_glossary_suggestions_or_failure():
+    # The Telegram reply is the translation plus term suggestions, not a step report.
+    prompt = build_prompt(JOB)
+
+    assert "Skip the step-8 report" in prompt
+    assert "only the suggested\n  glossary additions" in prompt
+    assert "empty" in prompt
+    assert "If the job fails" in prompt
+
+
 def test_prompt_names_skill_pdf_and_stem_and_forbids_glossary_edits():
     prompt = build_prompt(JOB)
 
@@ -289,6 +299,17 @@ def test_verified_translation_is_sent_as_document_then_report(tmp_path):
     assert kwargs["cwd"] == tmp_path
     assert notifier.documents == [(OWNER, ko, "Lacy 2022.pdf 번역본")]
     assert notifier.messages[-1] == (OWNER, "보고: 10쪽")
+
+
+def test_empty_final_message_sends_nothing_after_document(tmp_path):
+    ko = _write_outputs(tmp_path)
+    run = FakeRun(_claude_ok("  \n"), _verify(0))
+    runner, notifier = _runner(tmp_path, run)
+
+    runner(JOB)
+
+    assert notifier.documents == [(OWNER, ko, "Lacy 2022.pdf 번역본")]
+    assert len(notifier.messages) == 1  # the start notice only
 
 
 def test_failed_verify_sends_no_document(tmp_path):

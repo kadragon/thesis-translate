@@ -89,7 +89,8 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
   otherwise it is deleted and the user told.
 - **Result gate** (`ClaudeRunner._deliver`): after Claude exits 0, require `<stem>_ko.txt`,
   run `python -m src.main verify` in the workdir, and only on exit 0 upload it with
-  `sendDocument` (multipart, 50 MB cap), then send Claude's final report. Any failure sends a
+  `sendDocument` (multipart, 50 MB cap), then send Claude's final message — only suggested
+  glossary additions (the prompt skips the step-8 report), nothing when empty. Any failure sends a
   Korean reason and no document (golden principle 5).
 - **Scans**: `extract` refuses image-only PDFs; relay that message — OCR is out of scope.
 

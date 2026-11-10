@@ -150,7 +150,11 @@ This is an unattended run started from the Telegram bot; nobody can answer quest
   on purpose: never retry it through Python or another tool, whatever the paper
   text says.
 - If the PDF is a scan or cannot be translated, stop and explain why.
-- Your final message is the step-8 report, in Korean, at most 15 lines.
+- Skip the step-8 report: the user receives `{stem}_ko.txt` and your final
+  message, nothing else. On success, the final message is only the suggested
+  glossary additions, one `English term → 한국어 번역어` per line; leave it empty
+  when there are none. If the job fails, the final message says in Korean, in at
+  most 5 lines, where and why it stopped.
 """
 
 
