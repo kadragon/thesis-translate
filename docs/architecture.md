@@ -101,10 +101,14 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
   and skips existing ones (case-insensitive); `/glossary` lists entries (chunked under
   4096 chars), `/update term → 번역어` changes and `/delete term` removes entries, one per
   line. An unreadable file is reported and never overwritten. Jobs still cannot edit it
-  (`PROTECTED_PATHS`); only the bot process writes it, in place.
+  (`PROTECTED_PATHS`); only the bot process writes it, in place. A `/cmd@name` naming
+  another bot (checked against `getMe` at startup) is dropped without a reply. Edits hold
+  `Glossary.lock`; in root mode each job gets a root-owned 0644 copy taken under that lock
+  instead of a link, so a mid-job edit never hands `verify` a half-written file (the job
+  keeps the glossary it started with).
 
 Client library: none — `src/bot/telegram_api.py` calls the Bot API with stdlib `urllib`
-(no new dependency; the bot needs only `getUpdates`, `sendMessage`, file download/upload).
+(no new dependency; the bot needs only `getMe`, `getUpdates`, `sendMessage`, file download/upload).
 The allowlist must not be empty: `load_config` refuses to start otherwise.
 
 The queue is in memory: a restart drops queued jobs (the PDFs stay in `inbox/`).

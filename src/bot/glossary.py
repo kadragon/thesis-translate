@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -30,7 +31,7 @@ WRITE_FAILED = (
 )
 UPDATE_USAGE = "사용법: /update 영어 용어 → 새 번역어 (여러 줄 가능)"
 DELETE_USAGE = "사용법: /delete 영어 용어 (여러 줄 가능)"
-_COMMAND = re.compile(r"^/(\w+)(?:@\w+)?(?:\s+|$)")
+_COMMAND = re.compile(r"^/(\w+)(?:@(\w+))?(?:\s+|$)")
 # Pasted suggestion lines may carry list markers and markdown around the text.
 _LIST_MARKER = re.compile(r"^(?:[-*•]|\d+[.)])\s+")
 _WRAPPERS = "`*_"
@@ -76,10 +77,15 @@ class Glossary:
     extra keys and case-only duplicates survive. Raises ``ValueError`` or
     ``OSError`` on an unreadable file before anything is written, and
     ``GlossaryWriteError`` when saving fails.
+
+    An in-place write has a truncate-then-write window, so edits and
+    :meth:`copy_to` (per-job snapshots) hold ``lock``: a job never sees a
+    half-written file.
     """
 
     def __init__(self, path: Path) -> None:
         self.path = path
+        self.lock = threading.Lock()
 
     def _load(self) -> tuple[list[Entry], str | None]:
         """Validated raw entries and the file text (``None`` when missing)."""
@@ -98,7 +104,18 @@ class Glossary:
         return data, text
 
     def entries(self) -> list[Entry]:
-        return self._load()[0]
+        with self.lock:
+            return self._load()[0]
+
+    def copy_to(self, dest: Path) -> bool:
+        """Write a 0644 snapshot to ``dest``; ``False`` when there is no file."""
+        with self.lock:
+            if not self.path.is_file():
+                return False
+            data = self.path.read_bytes()
+        dest.write_bytes(data)
+        dest.chmod(0o644)
+        return True
 
     def _save(self, entries: list[Entry], original: str | None) -> None:
         text = json.dumps(entries, ensure_ascii=False, indent=2) + "\n"
@@ -119,6 +136,10 @@ class Glossary:
 
     def add(self, pairs: list[Pair]) -> tuple[list[Pair], list[Pair]]:
         """Append new terms; return ``(added, skipped)`` with existing values."""
+        with self.lock:
+            return self._add(pairs)
+
+    def _add(self, pairs: list[Pair]) -> tuple[list[Pair], list[Pair]]:
         entries, original = self._load()
         added: list[Pair] = []
         skipped: list[Pair] = []
@@ -135,6 +156,12 @@ class Glossary:
 
     def update(self, pairs: list[Pair]) -> tuple[list[tuple[str, str, str]], list[str]]:
         """Change existing terms; return ``(term, old, new)`` changes and misses."""
+        with self.lock:
+            return self._update(pairs)
+
+    def _update(
+        self, pairs: list[Pair]
+    ) -> tuple[list[tuple[str, str, str]], list[str]]:
         entries, original = self._load()
         changed: list[tuple[str, str, str]] = []
         missing: list[str] = []
@@ -151,6 +178,10 @@ class Glossary:
 
     def delete(self, terms: list[str]) -> tuple[list[Pair], list[str]]:
         """Remove terms; return removed pairs and misses."""
+        with self.lock:
+            return self._delete(terms)
+
+    def _delete(self, terms: list[str]) -> tuple[list[Pair], list[str]]:
         entries, original = self._load()
         removed: list[Pair] = []
         missing: list[str] = []
@@ -242,11 +273,23 @@ def _delete_reply(glossary: Glossary, body: str) -> list[str]:
     )
 
 
-def _dispatch(text: str, glossary: Glossary) -> list[str] | None:
+def _for_another_bot(mention: str | None, bot_username: str | None) -> bool:
+    """A ``/cmd@name`` not naming this bot; any mention when the name is unknown."""
+    if mention is None:
+        return False
+    return bot_username is None or mention.casefold() != bot_username.casefold()
+
+
+def _dispatch(
+    text: str, glossary: Glossary, bot_username: str | None
+) -> list[str] | None:
     command = _COMMAND.match(text)
     if command is None:
         pairs, bad = parse_pairs(text)
         return _add_reply(glossary, pairs, bad) if pairs else None
+    if _for_another_bot(command.group(2), bot_username):
+        # In a group, `/delete@other_bot term` is another bot's command.
+        return []
     name, body = command.group(1).lower(), text[command.end() :]
     if name == "glossary":
         return glossary.list_messages()
@@ -254,10 +297,16 @@ def _dispatch(text: str, glossary: Glossary) -> list[str] | None:
     return None if edit is None else edit(glossary, body)
 
 
-def handle_glossary_messages(text: str, glossary: Glossary) -> list[str] | None:
-    """Replies for a glossary message, or ``None`` when ``text`` is not one."""
+def handle_glossary_messages(
+    text: str, glossary: Glossary, bot_username: str | None = None
+) -> list[str] | None:
+    """Replies for a glossary message, or ``None`` when ``text`` is not one.
+
+    A command addressed to another bot yields ``[]`` (handled, no reply).
+    ``bot_username`` comes from ``getMe``.
+    """
     try:
-        return _dispatch(text, glossary)
+        return _dispatch(text, glossary, bot_username)
     except GlossaryWriteError:
         logger.exception("용어집 저장 실패: %s", glossary.path)
         return [WRITE_FAILED]
@@ -266,7 +315,9 @@ def handle_glossary_messages(text: str, glossary: Glossary) -> list[str] | None:
         return [READ_FAILED]
 
 
-def handle_glossary_text(text: str, glossary: Glossary) -> str | None:
+def handle_glossary_text(
+    text: str, glossary: Glossary, bot_username: str | None = None
+) -> str | None:
     """Single-string form of ``handle_glossary_messages`` (joined chunks)."""
-    replies = handle_glossary_messages(text, glossary)
+    replies = handle_glossary_messages(text, glossary, bot_username)
     return None if replies is None else "\n".join(replies)

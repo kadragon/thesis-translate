@@ -193,6 +193,62 @@ def test_plain_text_still_gets_hint_with_glossary(tmp_path):
     assert client.sent == [(OWNER, HINT)]
 
 
+def test_command_for_another_bot_gets_no_reply_and_no_write(tmp_path):
+    path = tmp_path / "glossary.json"
+    path.write_text('[{"term": "a", "translation": "가"}]', encoding="utf-8")
+    before = path.read_bytes()
+    client, intake = FakeClient(), FakeIntake()
+
+    for text in ("/delete@other_bot a", "/glossary@other_bot"):
+        handle_update(
+            _text_update(OWNER, text),
+            ALLOWED,
+            client,
+            intake,
+            glossary=Glossary(path),
+            bot_username="thesis_bot",
+        )
+
+    assert client.sent == []
+    assert path.read_bytes() == before
+
+
+def test_command_for_this_bot_is_handled(tmp_path):
+    path = tmp_path / "glossary.json"
+    path.write_text('[{"term": "a", "translation": "가"}]', encoding="utf-8")
+    client, intake = FakeClient(), FakeIntake()
+
+    handle_update(
+        _text_update(OWNER, "/delete@thesis_bot a"),
+        ALLOWED,
+        client,
+        intake,
+        glossary=Glossary(path),
+        bot_username="thesis_bot",
+    )
+
+    assert json.loads(path.read_text(encoding="utf-8")) == []
+    assert len(client.sent) == 1
+
+
+def test_poll_once_passes_the_bot_username_to_glossary_commands(tmp_path):
+    path = tmp_path / "glossary.json"
+    path.write_text('[{"term": "a", "translation": "가"}]', encoding="utf-8")
+    client = FakeClient([_text_update(OWNER, "/glossary@thesis_bot")])
+
+    poll_once(
+        client,
+        ALLOWED,
+        FakeIntake(),
+        offset=None,
+        glossary=Glossary(path),
+        bot_username="thesis_bot",
+    )
+
+    assert len(client.sent) == 1
+    assert "a → 가" in client.sent[0][1]
+
+
 def test_update_without_message_is_ignored():
     client, _ = _handle({"update_id": 1, "edited_message": {"chat": {"id": OWNER}}})
 
@@ -299,6 +355,17 @@ def test_client_raises_on_api_error_without_token_in_message():
         TelegramClient("t0k").get_updates(offset=None, timeout=30)
 
     assert "t0k" not in str(exc.value)
+
+
+def test_client_get_me_returns_the_bot_username():
+    with patch(
+        "src.bot.telegram_api.urlopen",
+        return_value=_response({"ok": True, "result": {"username": "thesis_bot"}}),
+    ) as urlopen:
+        username = TelegramClient("t0k").get_me()
+
+    assert username == "thesis_bot"
+    assert urlopen.call_args.args[0].full_url.endswith("/getMe")
 
 
 def test_client_repr_hides_token():
@@ -510,6 +577,23 @@ def test_isolation_is_built_and_reset_when_root(tmp_path):
     assert iso.home_template == template
     assert iso.outputs_dir == tmp_path / "outputs"
     assert list(jobs.iterdir()) == []
+
+
+def test_isolation_snapshots_through_the_shared_glossary(tmp_path):
+    template = tmp_path / "claude-home"
+    (template / ".claude").mkdir(parents=True)
+    glossary = Glossary(tmp_path / "glossary.json")
+
+    iso = build_isolation(
+        tmp_path,
+        euid=0,
+        jobs_dir=tmp_path / "jobs",
+        home_template=template,
+        glossary=glossary,
+    )
+
+    assert iso is not None
+    assert iso.glossary is glossary
 
 
 def test_isolation_refuses_missing_home_template(tmp_path):

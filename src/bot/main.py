@@ -60,13 +60,14 @@ def disable_dumpable(
     return True
 
 
-def build_isolation(
+def build_isolation(  # noqa: PLR0913 - keyword-only test seams
     workdir: Path,
     *,
     euid: int | None = None,
     jobs_dir: Path = JOBS_DIR,
     home_template: Path = HOME_TEMPLATE,
     pid: int | None = None,
+    glossary: Glossary | None = None,
 ) -> Isolation | None:
     """Per-job isolation when running as root (the container); else ``None``.
 
@@ -94,6 +95,7 @@ def build_isolation(
         jobs_dir=jobs_dir,
         outputs_dir=workdir / "outputs",
         home_template=home_template,
+        glossary=glossary,
     )
     isolation.reset()
     return isolation
@@ -105,12 +107,13 @@ class Client(Protocol):
     def send_message(self, chat_id: int, text: str) -> None: ...
 
 
-def poll_once(
+def poll_once(  # noqa: PLR0913 - glossary wiring is optional
     client: Client,
     allowed: AbstractSet[int],
     intake: Acceptor,
     offset: int | None,
     glossary: Glossary | None = None,
+    bot_username: str | None = None,
 ) -> int | None:
     """Fetch one batch, handle each update, and return the next offset."""
     for update in client.get_updates(offset, POLL_TIMEOUT_SECONDS):
@@ -118,7 +121,7 @@ def poll_once(
         # (a replay would queue the same PDF again).
         offset = update["update_id"] + 1
         try:
-            handle_update(update, allowed, client, intake, glossary)
+            handle_update(update, allowed, client, intake, glossary, bot_username)
         except Exception:
             logger.exception("업데이트 %s 처리 실패", update.get("update_id"))
     return offset
@@ -137,12 +140,15 @@ def main(env: Mapping[str, str] | None = None) -> int:
     except OSError as exc:
         logger.error("프로세스 보호(prctl) 설정 실패로 시작하지 않습니다: %s", exc)  # noqa: TRY400
         return 1
+    # Shared glossary the skill reads; bind-mounted from the host in Compose.
+    # One instance, so Telegram edits and per-job snapshots share its lock.
+    glossary = Glossary(Path.cwd() / "glossary.json")
     try:
-        isolation = build_isolation(Path.cwd())
+        isolation = build_isolation(Path.cwd(), glossary=glossary)
     except FileNotFoundError as exc:
         logger.error("작업 격리를 준비하지 못해 시작하지 않습니다: %s", exc)  # noqa: TRY400
         return 1
-    _serve(config, isolation)  # pragma: no cover - network loop
+    _serve(config, isolation, glossary)  # pragma: no cover - network loop
     return 0  # pragma: no cover
 
 
@@ -150,8 +156,20 @@ def _raise_keyboard_interrupt(*_: object) -> None:  # pragma: no cover
     raise KeyboardInterrupt
 
 
+def _bot_username(client: TelegramClient) -> str:  # pragma: no cover - network
+    """``getMe`` until it answers: commands for other bots are told apart by it."""
+    while True:
+        try:
+            return client.get_me()
+        except Exception as exc:  # any failure is retried
+            logger.warning(
+                "봇 정보(getMe) 조회 실패, %d초 후 재시도: %s", RETRY_DELAY_SECONDS, exc
+            )
+            time.sleep(RETRY_DELAY_SECONDS)
+
+
 def _serve(  # pragma: no cover - network loop
-    config: BotConfig, isolation: Isolation | None
+    config: BotConfig, isolation: Isolation | None, glossary: Glossary
 ) -> None:
     """Wire client, queue, runner, and intake; poll until Ctrl+C."""
     client = TelegramClient(config.token)
@@ -164,8 +182,6 @@ def _serve(  # pragma: no cover - network loop
         workdir=workdir,
         outputs=isolation.outputs_dir if isolation else None,
     )
-    # Shared glossary the skill reads; bind-mounted from the host in Compose.
-    glossary = Glossary(workdir / "glossary.json")
     queue.start()
     # As PID 1 the default SIGTERM action is ignored; stop cleanly on docker stop.
     signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)
@@ -173,10 +189,16 @@ def _serve(  # pragma: no cover - network loop
     offset: int | None = None
     # SIGTERM may land anywhere, including the retry sleep; stop cleanly either way.
     with contextlib.suppress(KeyboardInterrupt):
+        bot_username = _bot_username(client)
         while True:
             try:
                 offset = poll_once(
-                    client, config.allowed_chat_ids, intake, offset, glossary
+                    client,
+                    config.allowed_chat_ids,
+                    intake,
+                    offset,
+                    glossary,
+                    bot_username,
                 )
             except Exception as exc:
                 logger.warning(

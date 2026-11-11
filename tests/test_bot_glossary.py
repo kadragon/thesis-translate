@@ -137,11 +137,70 @@ def test_glossary_command_lists_entries(gpath):
     assert reply == "용어집 1개:\nunlearning → 언러닝"
 
 
-def test_glossary_command_accepts_bot_mention_suffix(gpath):
-    reply = handle_glossary_text("/glossary@thesis_bot", Glossary(gpath))
+def test_glossary_command_accepts_own_bot_mention_case_insensitively(gpath):
+    reply = handle_glossary_text(
+        "/glossary@Thesis_Bot", Glossary(gpath), bot_username="thesis_bot"
+    )
 
     assert reply is not None
     assert "unlearning → 언러닝" in reply
+
+
+@pytest.mark.parametrize("username", ["thesis_bot", None])
+def test_command_addressed_to_another_bot_gets_no_reply_and_no_write(gpath, username):
+    before = gpath.read_bytes()
+
+    for text in ("/delete@other_bot unlearning", "/glossary@other_bot", "/x@other"):
+        replies = handle_glossary_messages(text, Glossary(gpath), bot_username=username)
+        assert replies == []
+
+    assert gpath.read_bytes() == before
+
+
+def test_edits_hold_the_lock(gpath, monkeypatch):
+    glossary = Glossary(gpath)
+    seen: list[bool] = []
+    real_load = Glossary._load
+
+    def spy(self):
+        seen.append(self.lock.locked())
+        return real_load(self)
+
+    monkeypatch.setattr(Glossary, "_load", spy)
+    glossary.add([("forgetting", "망각")])
+    glossary.update([("forgetting", "잊기")])
+    glossary.delete(["forgetting"])
+
+    assert seen == [True, True, True]
+    assert not glossary.lock.locked()
+
+
+def test_copy_to_writes_a_snapshot_under_the_lock(gpath, tmp_path, monkeypatch):
+    glossary = Glossary(gpath)
+    dest = tmp_path / "job" / "glossary.json"
+    dest.parent.mkdir()
+    held: list[bool] = []
+    real = Path.read_bytes
+
+    def spy(self):
+        if self == gpath:
+            held.append(glossary.lock.locked())
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", spy)
+
+    assert glossary.copy_to(dest) is True
+
+    assert held == [True]
+    assert not dest.is_symlink()
+    assert dest.read_bytes() == real(gpath)
+
+
+def test_copy_to_skips_a_missing_glossary(tmp_path):
+    dest = tmp_path / "copy.json"
+
+    assert Glossary(tmp_path / "missing.json").copy_to(dest) is False
+    assert not dest.exists()
 
 
 def test_glossary_command_on_empty_glossary(tmp_path):

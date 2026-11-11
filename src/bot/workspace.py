@@ -23,11 +23,13 @@ from src.bot.runner import kill_same_uid_strays
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
+    from src.bot.glossary import Glossary
     from src.bot.jobs import Job
 
 logger = logging.getLogger(__name__)
 
 FIRST_JOB_UID = 20000
+GLOSSARY = "glossary.json"
 # Read-only views of the checkout the skill and CLI need from the job's CWD.
 LINKED_ENTRIES = (
     ".claude",
@@ -35,7 +37,7 @@ LINKED_ENTRIES = (
     "pyproject.toml",
     "uv.lock",
     ".venv",
-    "glossary.json",
+    GLOSSARY,
     "AGENTS.md",
     "CLAUDE.md",
     "CLAUDE.local.md",
@@ -84,6 +86,7 @@ class Isolation:
         chown: Callable[..., None] = os.chown,
         kill_strays: Callable[[int], int] | None = None,
         shared_tmp: Iterable[Path] = SHARED_TMP_DIRS,
+        glossary: Glossary | None = None,
     ) -> None:
         self.app_dir = app_dir
         self.jobs_dir = jobs_dir
@@ -93,6 +96,9 @@ class Isolation:
         self._chown = chown
         self._kill_strays = kill_strays or _kill_uid
         self._shared_tmp = tuple(shared_tmp)
+        # Set: each job gets a snapshot taken under the glossary's lock instead of
+        # a link, so a Telegram edit mid-job cannot hand verify a partial file.
+        self.glossary = glossary
 
     def reset(self) -> None:
         """Delete leftover job dirs: a restart reuses UIDs from the first one."""
@@ -122,6 +128,10 @@ class Isolation:
         for directory in (space.work, space.home, space.tmp):
             directory.mkdir(mode=0o700)
         for name in LINKED_ENTRIES:
+            if name == GLOSSARY and self.glossary is not None:
+                # Root-owned 0644 copy: readable, not writable, like the link.
+                self.glossary.copy_to(space.work / name)
+                continue
             target = self.app_dir / name
             if target.exists():
                 (space.work / name).symlink_to(target)
