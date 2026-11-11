@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from src.bot.glossary import Glossary
 from src.bot.jobs import Job
 from src.bot.runner import (
     ALLOWED_TOOLS,
@@ -656,6 +657,21 @@ def test_isolated_job_runs_as_job_uid_in_its_workspace(tmp_path):
     # The prompt names the PDF copy inside the job workdir, not the inbox.
     assert "`Lacy 2022.pdf`" in kwargs["input"]
     assert "inbox" not in kwargs["input"]
+
+
+def test_isolated_job_and_verify_read_the_glossary_snapshot(tmp_path):
+    run = WritingRun(_claude_ok(), _verify(0))
+    runner, _, iso = _iso_runner(tmp_path, run)
+    source = iso.app_dir / "glossary.json"
+    source.write_text("[]\n", encoding="utf-8")
+    iso.glossary = Glossary(source)
+
+    runner(_iso_job(tmp_path))
+
+    snapshot = str(iso.spaces[0].work / "glossary.json")
+    claude_env, verify_env = (kwargs["env"] for _, kwargs in run.calls[:2])
+    assert claude_env["THESIS_TRANSLATE_GLOSSARY"] == snapshot
+    assert verify_env["THESIS_TRANSLATE_GLOSSARY"] == snapshot
 
 
 def test_isolated_job_verifies_and_sends_the_copied_output(tmp_path):

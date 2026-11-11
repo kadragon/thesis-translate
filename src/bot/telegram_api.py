@@ -47,6 +47,11 @@ class TelegramClient:
             raise RuntimeError(msg)
         return body["result"]
 
+    def get_me(self) -> str:
+        """The bot's ``@username``, to tell its commands from other bots'."""
+        result = self._call("getMe", {}, _REQUEST_TIMEOUT_SECONDS)
+        return str(result["username"])
+
     def get_updates(self, offset: int | None, timeout: int) -> list[dict[str, Any]]:
         payload: dict[str, Any] = {"timeout": timeout, "allowed_updates": ["message"]}
         if offset is not None:

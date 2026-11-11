@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import subprocess
 from pathlib import Path
 from xml.etree.ElementTree import ParseError
@@ -33,10 +34,13 @@ logger = logging.getLogger(__name__)
 _INDENT = "  "
 # The shared glossary lives at the repo root, wherever the CLI is run from.
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# Set by the bot for isolated jobs: their snapshot, not the live shared file.
+GLOSSARY_ENV = "THESIS_TRANSLATE_GLOSSARY"
 
 
 def _glossary() -> Path:
-    return PROJECT_ROOT / "glossary.json"
+    override = os.environ.get(GLOSSARY_ENV)
+    return Path(override) if override else PROJECT_ROOT / "glossary.json"
 
 
 def _sibling(source: str, suffix: str) -> Path:

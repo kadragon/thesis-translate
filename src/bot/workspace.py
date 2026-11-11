@@ -19,15 +19,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from src.bot.runner import kill_same_uid_strays
+from src.main import GLOSSARY_ENV
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
 
+    from src.bot.glossary import Glossary
     from src.bot.jobs import Job
 
 logger = logging.getLogger(__name__)
 
 FIRST_JOB_UID = 20000
+GLOSSARY = "glossary.json"
 # Read-only views of the checkout the skill and CLI need from the job's CWD.
 LINKED_ENTRIES = (
     ".claude",
@@ -35,7 +38,7 @@ LINKED_ENTRIES = (
     "pyproject.toml",
     "uv.lock",
     ".venv",
-    "glossary.json",
+    GLOSSARY,
     "AGENTS.md",
     "CLAUDE.md",
     "CLAUDE.local.md",
@@ -84,6 +87,7 @@ class Isolation:
         chown: Callable[..., None] = os.chown,
         kill_strays: Callable[[int], int] | None = None,
         shared_tmp: Iterable[Path] = SHARED_TMP_DIRS,
+        glossary: Glossary | None = None,
     ) -> None:
         self.app_dir = app_dir
         self.jobs_dir = jobs_dir
@@ -93,6 +97,9 @@ class Isolation:
         self._chown = chown
         self._kill_strays = kill_strays or _kill_uid
         self._shared_tmp = tuple(shared_tmp)
+        # Set: each job gets a snapshot taken under the glossary's lock instead of
+        # a link, so a Telegram edit mid-job cannot hand verify a partial file.
+        self.glossary = glossary
 
     def reset(self) -> None:
         """Delete leftover job dirs: a restart reuses UIDs from the first one."""
@@ -122,6 +129,10 @@ class Isolation:
         for directory in (space.work, space.home, space.tmp):
             directory.mkdir(mode=0o700)
         for name in LINKED_ENTRIES:
+            if name == GLOSSARY and self.glossary is not None:
+                # Root-owned 0644 copy: readable, not writable, like the link.
+                self.glossary.copy_to(space.work / name)
+                continue
             target = self.app_dir / name
             if target.exists():
                 (space.work / name).symlink_to(target)
@@ -140,7 +151,8 @@ class Isolation:
 
     def child_env(self, space: JobSpace) -> dict[str, str]:
         """Per-job overrides for the child environment."""
-        return {
+        env = self._glossary_env(space)
+        return env | {
             "HOME": str(space.home),
             "USER": f"job{space.uid}",
             "TMPDIR": str(space.tmp),
@@ -148,6 +160,13 @@ class Isolation:
             "XDG_CONFIG_HOME": str(space.home / ".config"),
             "UV_CACHE_DIR": str(space.tmp / "uv-cache"),
         }
+
+    def _glossary_env(self, space: JobSpace) -> dict[str, str]:
+        # `src` is a link into the app dir, so the CLI's repo-root default would
+        # read the live file; point it (in-job calls and verify) at the snapshot.
+        if self.glossary is None:
+            return {}
+        return {GLOSSARY_ENV: str(space.work / GLOSSARY)}
 
     def sweep(self, space: JobSpace) -> bool:
         """Kill every process of the job UID (setsid'd leftovers included).

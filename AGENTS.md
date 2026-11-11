@@ -59,6 +59,8 @@ Updates (newest first, keep ~5).
 
 ## Updates
 
+- 2026-11-11: Glossary commands addressed to another bot (`/cmd@other`) are dropped; jobs
+  get a locked snapshot of `glossary.json` instead of a link to the live file.
 - 2026-11-10: Allowlisted chats edit `glossary.json` over Telegram: `term → 번역어` lines
   add (existing terms skipped), `/glossary` lists, `/update` changes, `/delete` removes.
   Compose bind-mounts the host's `glossary.json`.
@@ -68,5 +70,3 @@ Updates (newest first, keep ~5).
   slack); `getFile` retries once on `TimeoutError`.
 - 2026-11-10: A successful bot job replies with `_ko.txt` plus suggested glossary additions
   only; the step-8 report is skipped.
-- 2026-11-10: Bot allowlist adds `Bash(pdfinfo:*)`; the prompt lists the allowed Bash
-  prefixes and says a denial is not a reason to stop; each denied call is logged.

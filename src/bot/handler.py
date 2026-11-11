@@ -41,12 +41,13 @@ def _is_pdf(document: dict[str, Any]) -> bool:
     return document.get("mime_type") == PDF_MIME or name.lower().endswith(".pdf")
 
 
-def handle_update(
+def handle_update(  # noqa: PLR0913 - glossary wiring is optional
     update: dict[str, Any],
     allowed: AbstractSet[int],
     client: Sender,
     intake: Acceptor,
     glossary: Glossary | None = None,
+    bot_username: str | None = None,
 ) -> None:
     """Reply to one update. Chats outside ``allowed`` are dropped silently.
 
@@ -63,7 +64,7 @@ def handle_update(
     document = message.get("document")
     text = message.get("text")
     if glossary is not None and isinstance(text, str):
-        replies = handle_glossary_messages(text, glossary)
+        replies = handle_glossary_messages(text, glossary, bot_username)
         if replies is not None:
             for reply in replies:
                 client.send_message(chat_id, reply)

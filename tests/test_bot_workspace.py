@@ -3,9 +3,11 @@
 import dataclasses
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
+from src.bot.glossary import Glossary
 from src.bot.jobs import Job
 from src.bot.workspace import FIRST_JOB_UID, LINKED_ENTRIES, Isolation
 
@@ -87,6 +89,42 @@ def test_prepare_links_app_entries_copies_pdf_and_seeds_home(tmp_path):
     assert space.home / ".claude" / "settings.json" in owned
     # The job root stays ours so the job cannot swap its own subdirectories.
     assert space.root not in owned
+
+
+def test_prepare_copies_glossary_through_the_shared_glossary(tmp_path):
+    iso, rec = _isolation(tmp_path)
+    source = tmp_path / "app" / "glossary.json"
+    source.write_text('[{"term": "a", "translation": "가"}]\n', encoding="utf-8")
+    iso.glossary = Glossary(source)
+    copies: list[Path] = []
+    real = Glossary.copy_to
+
+    def spy(self, dest):
+        copies.append(dest)
+        return real(self, dest)
+
+    with patch.object(Glossary, "copy_to", spy):
+        space = iso.prepare(_job(tmp_path))
+
+    copy = space.work / "glossary.json"
+    assert copies == [copy]
+    assert not copy.is_symlink()
+    assert copy.read_bytes() == source.read_bytes()
+    # Root-owned and read-only to the job, like the linked original.
+    assert copy not in {path for path, *_ in rec.chowns}
+    assert oct(copy.stat().st_mode & 0o777) == oct(0o644)
+    # A later edit does not reach the running job's copy.
+    source.write_text("[]\n", encoding="utf-8")
+    assert copy.read_text(encoding="utf-8") != "[]\n"
+
+
+def test_prepare_links_glossary_without_a_shared_glossary(tmp_path):
+    iso, _ = _isolation(tmp_path)
+    (tmp_path / "app" / "glossary.json").write_text("[]\n", encoding="utf-8")
+
+    space = iso.prepare(_job(tmp_path))
+
+    assert (space.work / "glossary.json").is_symlink()
 
 
 def test_child_env_points_home_tmp_and_caches_into_the_job(tmp_path):
