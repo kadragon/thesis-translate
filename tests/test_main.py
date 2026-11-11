@@ -256,6 +256,31 @@ def test_verify_default_glossary_resolves_from_project_root(
     assert "transformer → 트랜스포머 없음" in caplog.text
 
 
+def test_glossary_env_overrides_the_project_root_glossary(
+    tmp_path, monkeypatch, caplog
+):
+    root = tmp_path / "repo"
+    root.mkdir()
+    _write(root / "glossary.json", "not json")
+    snapshot = _write(
+        tmp_path / "snap.json",
+        '[{"term": "transformer", "translation": "트랜스포머"}]',
+    )
+    work = tmp_path / "elsewhere"
+    work.mkdir()
+    src = _write(work / "s.txt", "  p.1\n\n  A transformer.\n\n")
+    dst = _write(work / "d.txt", "  p.1\n\n  변환기.\n\n")
+    monkeypatch.chdir(work)
+    monkeypatch.setenv("THESIS_TRANSLATE_GLOSSARY", str(snapshot))
+
+    with (
+        patch("src.main.PROJECT_ROOT", root),
+        patch("src.main.configure_logging"),
+    ):
+        assert main(["verify", src, dst]) == 0
+    assert "transformer → 트랜스포머 없음" in caplog.text
+
+
 def test_extract_keeps_glossary_compound_hyphen(tmp_path):
     root = tmp_path / "repo"
     root.mkdir()

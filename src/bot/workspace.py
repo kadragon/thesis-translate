@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from src.bot.runner import kill_same_uid_strays
+from src.main import GLOSSARY_ENV
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -150,7 +151,8 @@ class Isolation:
 
     def child_env(self, space: JobSpace) -> dict[str, str]:
         """Per-job overrides for the child environment."""
-        return {
+        env = self._glossary_env(space)
+        return env | {
             "HOME": str(space.home),
             "USER": f"job{space.uid}",
             "TMPDIR": str(space.tmp),
@@ -158,6 +160,13 @@ class Isolation:
             "XDG_CONFIG_HOME": str(space.home / ".config"),
             "UV_CACHE_DIR": str(space.tmp / "uv-cache"),
         }
+
+    def _glossary_env(self, space: JobSpace) -> dict[str, str]:
+        # `src` is a link into the app dir, so the CLI's repo-root default would
+        # read the live file; point it (in-job calls and verify) at the snapshot.
+        if self.glossary is None:
+            return {}
+        return {GLOSSARY_ENV: str(space.work / GLOSSARY)}
 
     def sweep(self, space: JobSpace) -> bool:
         """Kill every process of the job UID (setsid'd leftovers included).
