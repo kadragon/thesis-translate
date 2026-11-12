@@ -3,6 +3,7 @@
 import io
 import json
 import logging
+from email.message import Message
 from http.client import RemoteDisconnected
 from unittest.mock import patch
 from urllib.error import HTTPError, URLError
@@ -624,7 +625,7 @@ def test_main_exits_1_when_isolation_cannot_start():
 
 
 def _http_error(code):
-    return HTTPError("https://api.telegram.org", code, "err", {}, None)
+    return HTTPError("https://api.telegram.org", code, "err", Message(), None)
 
 
 @pytest.mark.parametrize(
