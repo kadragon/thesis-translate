@@ -9,8 +9,10 @@ import os
 import signal
 import sys
 import time
+from http import HTTPStatus
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
+from urllib.error import HTTPError
 
 from src.bot.config import ConfigError, load_config
 from src.bot.glossary import Glossary
@@ -36,6 +38,9 @@ JOBS_DIR = Path("/jobs")
 # Root-owned ~/.claude template (settings, plugins) built into the image.
 HOME_TEMPLATE = Path("/opt/claude-home")
 RETRY_DELAY_SECONDS = 5
+# Resets, dropped connections, and 5xx are routine on a long-poll; warn only
+# when this many failures in a row suggest a real outage.
+POLL_FAILURE_WARN_AFTER = 3
 PR_SET_DUMPABLE = 4
 
 
@@ -152,6 +157,34 @@ def main(env: Mapping[str, str] | None = None) -> int:
     return 0  # pragma: no cover
 
 
+def _is_transient(exc: Exception) -> bool:
+    """Network-level failure or Telegram 5xx; a 4xx (bad token, 409) is not."""
+    if isinstance(exc, HTTPError):
+        return exc.code >= HTTPStatus.INTERNAL_SERVER_ERROR
+    return isinstance(exc, OSError)
+
+
+class PollFailures:
+    """Logs ``getUpdates`` failures: transient ones at INFO until they persist."""
+
+    def __init__(self) -> None:
+        self._consecutive = 0
+
+    def reset(self) -> None:
+        self._consecutive = 0
+
+    def record(self, exc: Exception) -> None:
+        self._consecutive += 1
+        quiet = _is_transient(exc) and self._consecutive < POLL_FAILURE_WARN_AFTER
+        logger.log(
+            logging.INFO if quiet else logging.WARNING,
+            "업데이트 수신 실패(연속 %d회), %d초 후 재시도: %s",
+            self._consecutive,
+            RETRY_DELAY_SECONDS,
+            exc,
+        )
+
+
 def _raise_keyboard_interrupt(*_: object) -> None:  # pragma: no cover
     raise KeyboardInterrupt
 
@@ -190,6 +223,7 @@ def _serve(  # pragma: no cover - network loop
     signal.signal(signal.SIGTERM, _raise_keyboard_interrupt)
     logger.info("봇을 시작합니다. 허용 채팅 %d개", len(config.allowed_chat_ids))
     offset: int | None = None
+    failures = PollFailures()
     # SIGTERM may land anywhere, including the retry sleep; stop cleanly either way.
     with contextlib.suppress(KeyboardInterrupt):
         bot_username = _bot_username(client)
@@ -204,10 +238,10 @@ def _serve(  # pragma: no cover - network loop
                     bot_username,
                 )
             except Exception as exc:
-                logger.warning(
-                    "업데이트 수신 실패, %d초 후 재시도: %s", RETRY_DELAY_SECONDS, exc
-                )
+                failures.record(exc)
                 time.sleep(RETRY_DELAY_SECONDS)
+            else:
+                failures.reset()
     logger.info("봇을 종료합니다.")
 
 

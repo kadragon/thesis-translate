@@ -2,8 +2,10 @@
 
 import io
 import json
+import logging
+from http.client import RemoteDisconnected
 from unittest.mock import patch
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 
 import pytest
 
@@ -17,8 +19,10 @@ from src.bot.handler import (
     handle_update,
 )
 from src.bot.main import (
+    POLL_FAILURE_WARN_AFTER,
     POLL_TIMEOUT_SECONDS,
     PR_SET_DUMPABLE,
+    PollFailures,
     build_isolation,
     disable_dumpable,
     poll_once,
@@ -617,3 +621,48 @@ def test_main_exits_1_when_isolation_cannot_start():
     ):
         assert bot_main(env) == 1
     serve.assert_not_called()
+
+
+def _http_error(code):
+    return HTTPError("https://api.telegram.org", code, "err", {}, None)
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        URLError(ConnectionResetError(104, "Connection reset by peer")),
+        RemoteDisconnected("Remote end closed connection without response"),
+        TimeoutError("The read operation timed out"),
+        _http_error(502),
+    ],
+)
+def test_transient_poll_failure_logs_info_until_threshold(exc, caplog):
+    failures = PollFailures()
+    with caplog.at_level(logging.INFO, logger="src.bot.main"):
+        for _ in range(POLL_FAILURE_WARN_AFTER):
+            failures.record(exc)
+
+    levels = [r.levelno for r in caplog.records]
+    assert levels == [logging.INFO] * (POLL_FAILURE_WARN_AFTER - 1) + [logging.WARNING]
+
+
+def test_successful_poll_resets_the_consecutive_failure_count(caplog):
+    failures = PollFailures()
+    exc = URLError(ConnectionResetError(104, "reset"))
+    with caplog.at_level(logging.INFO, logger="src.bot.main"):
+        for _ in range(POLL_FAILURE_WARN_AFTER - 1):
+            failures.record(exc)
+        failures.reset()
+        failures.record(exc)
+
+    assert all(r.levelno == logging.INFO for r in caplog.records)
+
+
+@pytest.mark.parametrize(
+    "exc", [_http_error(409), _http_error(401), ValueError("bad json")]
+)
+def test_non_transient_poll_failure_warns_immediately(exc, caplog):
+    with caplog.at_level(logging.INFO, logger="src.bot.main"):
+        PollFailures().record(exc)
+
+    assert [r.levelno for r in caplog.records] == [logging.WARNING]

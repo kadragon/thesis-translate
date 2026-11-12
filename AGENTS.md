@@ -59,6 +59,8 @@ Updates (newest first, keep ~5).
 
 ## Updates
 
+- 2026-11-12: Transient `getUpdates` failures (network errors, 5xx) log at INFO; WARNING from the
+  3rd in a row, or at once for a 4xx.
 - 2026-11-12: Non-isolated (non-root) jobs also get a per-job `glossary.json` snapshot taken
   under `Glossary.lock`; `THESIS_TRANSLATE_GLOSSARY` points claude and `verify` at it.
 - 2026-11-11: Glossary commands addressed to another bot (`/cmd@other`) are dropped; jobs
@@ -68,5 +70,3 @@ Updates (newest first, keep ~5).
   Compose bind-mounts the host's `glossary.json`.
 - 2026-11-10: Intake sends one reply with page count and an estimated time; the runner's
   start notice goes only to jobs that waited in the queue.
-- 2026-11-10: `getFile`/`sendMessage` use a 30 s socket timeout (was the 10 s long-poll
-  slack); `getFile` retries once on `TimeoutError`.

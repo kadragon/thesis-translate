@@ -146,3 +146,11 @@ with N > 0: the tool allowlist (`ALLOWED_TOOLS` in `src/bot/runner.py`) blocked 
 narrowest matching entry plus a test.
 
 **Bot: file too large** — Bot API downloads cap at 20 MB, uploads at 50 MB.
+
+**Bot: `업데이트 수신 실패(연속 N회)`** — `getUpdates` failed; the loop retries in 5 s and the
+offset is kept, so no update is lost. Connection resets, dropped connections, timeouts, and
+Telegram 5xx log at INFO; WARNING appears from the 3rd consecutive failure (outage) or at once
+for a 4xx (401 bad token, 409 another poller on the same token).
+
+**Compose: `bind source path does not exist: …/glossary.json`** — deploy with
+`scripts/deploy.sh`, or create the file first (see *Container (deployment)*).
