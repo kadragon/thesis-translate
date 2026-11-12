@@ -59,6 +59,8 @@ Updates (newest first, keep ~5).
 
 ## Updates
 
+- 2026-11-12: Non-isolated (non-root) jobs also get a per-job `glossary.json` snapshot taken
+  under `Glossary.lock`; `THESIS_TRANSLATE_GLOSSARY` points claude and `verify` at it.
 - 2026-11-11: Glossary commands addressed to another bot (`/cmd@other`) are dropped; jobs
   get a locked snapshot of `glossary.json` instead of a link to the live file.
 - 2026-11-10: Allowlisted chats edit `glossary.json` over Telegram: `term → 번역어` lines
@@ -68,5 +70,3 @@ Updates (newest first, keep ~5).
   start notice goes only to jobs that waited in the queue.
 - 2026-11-10: `getFile`/`sendMessage` use a 30 s socket timeout (was the 10 s long-poll
   slack); `getFile` retries once on `TimeoutError`.
-- 2026-11-10: A successful bot job replies with `_ko.txt` plus suggested glossary additions
-  only; the step-8 report is skipped.

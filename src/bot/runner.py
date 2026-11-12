@@ -15,13 +15,17 @@ import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
+from src.main import GLOSSARY_ENV
+
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
 
+    from src.bot.glossary import Glossary
     from src.bot.jobs import Job
     from src.bot.workspace import Isolation, JobSpace
 
@@ -321,7 +325,7 @@ def _parse_result(stdout: str) -> dict[str, Any]:
 class ClaudeRunner:
     """Callable used as the ``JobQueue`` runner."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913 - keyword-only wiring and test seams
         self,
         notifier: Notifier,
         *,
@@ -329,12 +333,15 @@ class ClaudeRunner:
         run: Callable[..., subprocess.CompletedProcess[str]] = run_in_group,
         env: Mapping[str, str] | None = None,
         isolation: Isolation | None = None,
+        glossary: Glossary | None = None,
     ) -> None:
         self._notifier = notifier
         self._workdir = workdir
         self._run = run
         self._env = os.environ if env is None else env
         self._isolation = isolation
+        # Shared mode only; isolated jobs get their snapshot from ``isolation``.
+        self._glossary = glossary
 
     def __call__(self, job: Job) -> None:
         if job.waited:  # otherwise the intake reply already said it starts now
@@ -342,10 +349,23 @@ class ClaudeRunner:
         if self._isolation is not None:
             self._run_isolated(job, self._isolation)
             return
-        place = _Place(self._workdir, _child_env(self._env), {})
-        report = self._translate(job, place, _sweep_strays)
-        if report is not None:
-            self._deliver(job, report, place)
+        with tempfile.TemporaryDirectory(prefix="glossary-") as tmp:
+            env = _child_env(self._env)
+            if self._glossary is not None:
+                # Same guard as the isolated copy: Telegram edits rewrite the
+                # live file in place, so verify reads a snapshot taken under
+                # the lock instead.
+                snapshot = Path(tmp) / "glossary.json"
+                try:
+                    self._glossary.copy_to(snapshot)
+                except OSError as exc:
+                    self._fail(job, f"용어집 사본을 만들지 못했습니다: {exc}")
+                    return
+                env[GLOSSARY_ENV] = str(snapshot)
+            place = _Place(self._workdir, env, {})
+            report = self._translate(job, place, _sweep_strays)
+            if report is not None:
+                self._deliver(job, report, place)
 
     def _run_isolated(self, job: Job, isolation: Isolation) -> None:
         """Root mode: a fresh UID and throwaway workspace for this job only."""
