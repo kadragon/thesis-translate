@@ -174,7 +174,10 @@ def _serve(  # pragma: no cover - network loop
     """Wire client, queue, runner, and intake; poll until Ctrl+C."""
     client = TelegramClient(config.token)
     workdir = Path.cwd()
-    queue = JobQueue(runner=ClaudeRunner(client, workdir=workdir, isolation=isolation))
+    runner = ClaudeRunner(
+        client, workdir=workdir, isolation=isolation, glossary=glossary
+    )
+    queue = JobQueue(runner=runner)
     intake = Intake(
         client,
         queue,

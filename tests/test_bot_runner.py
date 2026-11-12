@@ -761,6 +761,65 @@ def test_isolated_job_sweeps_uid_before_collecting_outputs(tmp_path):
     assert order[:2] == ["sweep", "collect"]
 
 
+class EditingRun(FakeRun):
+    """Rewrites the live glossary during the claude call; records snapshot text."""
+
+    def __init__(self, live, *results):
+        super().__init__(*results)
+        self.live = live
+        self.seen: list[str] = []
+
+    def __call__(self, argv, **kwargs):
+        snapshot = Path(kwargs["env"]["THESIS_TRANSLATE_GLOSSARY"])
+        self.seen.append(snapshot.read_text(encoding="utf-8"))
+        self.live.write_text('[{"term": "x", ', encoding="utf-8")  # torn write
+        return super().__call__(argv, **kwargs)
+
+
+def test_shared_job_and_verify_read_a_glossary_snapshot(tmp_path):
+    _write_outputs(tmp_path)
+    live = tmp_path / "glossary.json"
+    live.write_text("[]\n", encoding="utf-8")
+    run = EditingRun(live, _claude_ok(), _verify(0))
+    notifier = FakeNotifier()
+    runner = ClaudeRunner(
+        notifier, workdir=tmp_path, run=run, env={}, glossary=Glossary(live)
+    )
+
+    runner(JOB)
+
+    claude_env, verify_env = (kwargs["env"] for _, kwargs in run.calls)
+    snapshot = claude_env["THESIS_TRANSLATE_GLOSSARY"]
+    assert verify_env["THESIS_TRANSLATE_GLOSSARY"] == snapshot
+    assert Path(snapshot) != live
+    # verify still sees the content from job start, not the mid-job write.
+    assert run.seen == ["[]\n", "[]\n"]
+    assert not Path(snapshot).exists()
+    assert notifier.documents
+
+
+def test_shared_job_glossary_snapshot_failure_is_reported(tmp_path, monkeypatch):
+    live = tmp_path / "glossary.json"
+    live.write_text("[]\n", encoding="utf-8")
+    glossary = Glossary(live)
+
+    def broken(_dest):
+        message = "disk full"
+        raise OSError(message)
+
+    monkeypatch.setattr(glossary, "copy_to", broken)
+    run = FakeRun()
+    notifier = FakeNotifier()
+    runner = ClaudeRunner(
+        notifier, workdir=tmp_path, run=run, env={}, glossary=glossary
+    )
+
+    runner(JOB)
+
+    assert run.calls == []
+    assert "disk full" in notifier.messages[-1][1]
+
+
 def test_shared_mode_runs_without_uid_switch(tmp_path):
     run = FakeRun(_claude_ok())
     runner, _ = _runner(tmp_path, run)

@@ -103,11 +103,14 @@ Telegram ──long poll──▶ src/bot (receive, allowlist, queue)
   line. An unreadable file is reported and never overwritten. Jobs still cannot edit it
   (`PROTECTED_PATHS`); only the bot process writes it, in place. A `/cmd@name` naming
   another bot (checked against `getMe` at startup) is dropped without a reply. Edits hold
-  `Glossary.lock`; in root mode each job gets a root-owned 0644 copy taken under that lock
-  instead of a link, and `THESIS_TRANSLATE_GLOSSARY` in the job env points the CLI (in-job
-  calls and the bot's `verify`) at it — the repo-root default would follow the `src` link to
-  the live file. A mid-job edit never hands `verify` a half-written file; the job keeps the
-  glossary it started with. Non-isolated runs and host-side edits still use the live file.
+  `Glossary.lock`; each job gets a copy taken under that lock — in root mode a root-owned
+  0644 file in its workdir instead of a link, in non-isolated mode a temp file removed after
+  the job — and `THESIS_TRANSLATE_GLOSSARY` in the job env points the CLI (in-job calls and
+  the bot's `verify`) at it; the repo-root default would read the live file. A mid-job
+  Telegram edit never hands `verify` a half-written file; the job keeps the glossary it
+  started with. Not covered: in non-isolated mode Claude's own `Read` of `glossary.json`
+  still sees the live file, and host-side edits take no lock (a host editor cannot honor an
+  in-process lock), so edit on the host only while no job is starting.
 
 Client library: none — `src/bot/telegram_api.py` calls the Bot API with stdlib `urllib`
 (no new dependency; the bot needs only `getMe`, `getUpdates`, `sendMessage`, file download/upload).
