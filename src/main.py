@@ -7,6 +7,7 @@ import logging
 import os
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 from xml.etree.ElementTree import ParseError
 
 from src.core.alignment import (
@@ -14,6 +15,7 @@ from src.core.alignment import (
     find_length_outliers,
     find_misalignments,
     find_number_mismatches,
+    find_term_shadows,
     find_term_violations,
     find_untranslated,
     interleave,
@@ -28,6 +30,9 @@ from src.core.pdf_extractor import (
 )
 from src.utils.output_formatter import OutputFormatter
 from src.utils.rich_logging import configure_logging
+
+if TYPE_CHECKING:
+    from src.core.alignment import TermEntry
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +133,40 @@ def _verify(args: argparse.Namespace) -> int:
     return 0
 
 
+def _entry(entry: TermEntry) -> str:
+    return (
+        f"{entry['term']} → {entry['translation']} ({entry['file']} #{entry['index']})"
+    )
+
+
+def _terms_check(args: argparse.Namespace) -> int:
+    paths = [Path(path) for path in args.files]
+    for path in paths:
+        if not path.is_file():
+            logger.warning("용어 파일 없음(건너뜀): %s", path)
+    try:
+        shadows = find_term_shadows(paths)
+    except ValueError as exc:
+        logger.error("용어 파일 오류: %s", exc)  # noqa: TRY400
+        return 1
+    conflicts = [s for s in shadows if s["kind"] == "conflict"]
+    for shadow in shadows:
+        if shadow["kind"] == "conflict":
+            logger.warning(
+                "용어 충돌: %s 채택, %s 가려짐",
+                _entry(shadow["kept"]),
+                _entry(shadow["shadowed"]),
+            )
+        else:
+            logger.info("같은 번역어 중복: %s", _entry(shadow["shadowed"]))
+    logger.info(
+        "충돌 %d건, 같은 번역어 중복 %d건",
+        len(conflicts),
+        len(shadows) - len(conflicts),
+    )
+    return 1 if conflicts else 0
+
+
 def _dual(args: argparse.Namespace) -> int:
     source = read_blocks(args.source)
     translation = read_blocks(args.translation)
@@ -181,6 +220,14 @@ def _parser() -> argparse.ArgumentParser:
         help="용어 파일(반복 가능). 기본값: glossary.json, <PDF 이름>_terms.json",
     )
     verify.set_defaults(handler=_verify)
+
+    terms_check = sub.add_parser(
+        "terms-check", help="용어 파일 사이에서 가려지는 번역어 확인"
+    )
+    terms_check.add_argument(
+        "files", nargs="+", help="우선순위 순서의 용어 파일(앞쪽이 채택됨)"
+    )
+    terms_check.set_defaults(handler=_terms_check)
 
     dual = sub.add_parser("dual", help="원문·번역문 병기본 만들기")
     dual.add_argument("source")

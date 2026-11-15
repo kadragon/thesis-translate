@@ -6,7 +6,7 @@ import json
 import re
 from collections import Counter
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal, TypedDict
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -161,23 +161,70 @@ def load_terms(paths: list[Path]) -> list[dict[str, str]]:
     """
     terms: dict[str, dict[str, str]] = {}
     for path in paths:
-        if not path.is_file():
-            continue
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(data, list) or not all(
-            isinstance(entry, dict)
-            and isinstance(entry.get("term"), str)
-            and isinstance(entry.get("translation"), str)
-            for entry in data
-        ):
-            msg = f'{path}: expected [{{"term": ..., "translation": ...}}]'
-            raise ValueError(msg)
-        for entry in data:
+        for entry in _read_term_file(path):
             terms.setdefault(
                 entry["term"].casefold(),
                 {"term": entry["term"], "translation": entry["translation"]},
             )
     return list(terms.values())
+
+
+def _read_term_file(path: Path) -> list[dict[str, str]]:
+    """Return a term file's entries: ``[]`` if missing, ``ValueError`` if malformed."""
+    if not path.is_file():
+        return []
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list) or not all(
+        isinstance(entry, dict)
+        and isinstance(entry.get("term"), str)
+        and isinstance(entry.get("translation"), str)
+        for entry in data
+    ):
+        msg = f'{path}: expected [{{"term": ..., "translation": ...}}]'
+        raise ValueError(msg)
+    return data
+
+
+class TermEntry(TypedDict):
+    file: str
+    index: int  # 1-based position in its file
+    term: str
+    translation: str
+
+
+class TermShadow(TypedDict):
+    kind: Literal["conflict", "duplicate"]
+    kept: TermEntry
+    shadowed: TermEntry
+
+
+def find_term_shadows(paths: list[Path]) -> list[TermShadow]:
+    """Return entries ``load_terms`` drops because an earlier one has the same term.
+
+    ``conflict`` when the dropped translation differs from the kept one,
+    ``duplicate`` when it is the same. Reads the files only; never edits them.
+    """
+    kept: dict[str, TermEntry] = {}
+    shadows: list[TermShadow] = []
+    for path in paths:
+        for index, entry in enumerate(_read_term_file(path), start=1):
+            current = TermEntry(
+                file=str(path),
+                index=index,
+                term=entry["term"],
+                translation=entry["translation"],
+            )
+            first = kept.setdefault(entry["term"].casefold(), current)
+            if first is not current:
+                same = first["translation"] == current["translation"]
+                shadows.append(
+                    TermShadow(
+                        kind="duplicate" if same else "conflict",
+                        kept=first,
+                        shadowed=current,
+                    )
+                )
+    return shadows
 
 
 def find_term_violations(

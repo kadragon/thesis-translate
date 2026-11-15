@@ -7,6 +7,7 @@ from src.core.alignment import (
     find_length_outliers,
     find_misalignments,
     find_number_mismatches,
+    find_term_shadows,
     find_term_violations,
     find_untranslated,
     interleave,
@@ -180,6 +181,77 @@ def test_load_terms_keeps_first_entry_for_repeated_term(tmp_path):
         {"term": "unlearning", "translation": "언러닝"},
         {"term": "habit", "translation": "습관"},
     ]
+
+
+def _shadow_files(tmp_path):
+    glossary = tmp_path / "glossary.json"
+    glossary.write_text(
+        '[{"term": "unlearning", "translation": "언러닝"},'
+        ' {"term": "habit", "translation": "습관"}]',
+        "utf-8",
+    )
+    paper = tmp_path / "paper_terms.json"
+    paper.write_text(
+        '[{"term": "Unlearning", "translation": "탈학습"},'
+        ' {"term": "habit", "translation": "습관"},'
+        ' {"term": "routine", "translation": "일과"}]',
+        "utf-8",
+    )
+    return glossary, paper
+
+
+def test_find_term_shadows_classifies_conflict_duplicate_and_case_variant(tmp_path):
+    glossary, paper = _shadow_files(tmp_path)
+
+    assert find_term_shadows([glossary, tmp_path / "missing.json", paper]) == [
+        {
+            "kind": "conflict",
+            "kept": {
+                "file": str(glossary),
+                "index": 1,
+                "term": "unlearning",
+                "translation": "언러닝",
+            },
+            "shadowed": {
+                "file": str(paper),
+                "index": 1,
+                "term": "Unlearning",
+                "translation": "탈학습",
+            },
+        },
+        {
+            "kind": "duplicate",
+            "kept": {
+                "file": str(glossary),
+                "index": 2,
+                "term": "habit",
+                "translation": "습관",
+            },
+            "shadowed": {
+                "file": str(paper),
+                "index": 2,
+                "term": "habit",
+                "translation": "습관",
+            },
+        },
+    ]
+
+
+def test_find_term_shadows_kept_matches_load_terms(tmp_path):
+    files = list(_shadow_files(tmp_path))
+    merged = {e["term"].casefold(): e["translation"] for e in load_terms(files)}
+
+    for shadow in find_term_shadows(files):
+        kept = shadow["kept"]
+        assert merged[str(kept["term"]).casefold()] == kept["translation"]
+
+
+def test_find_term_shadows_rejects_malformed_entries(tmp_path):
+    bad = tmp_path / "terms.json"
+    bad.write_text('[{"term": "a"}]', encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"terms\.json"):
+        find_term_shadows([bad])
 
 
 def test_load_terms_rejects_malformed_entries(tmp_path):

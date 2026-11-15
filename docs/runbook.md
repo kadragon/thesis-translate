@@ -26,6 +26,7 @@ CI (`.github/workflows/ci.yml`) runs the four checks above on every PR and push 
 ```bash
 uv run thesis-translate extract paper.pdf --start-page 174 [--first-pdf-page 2] [--force]
 uv run thesis-translate verify paper_en.txt paper_ko.txt [--glossary g.json]
+uv run thesis-translate terms-check glossary.json paper_terms.json  # exit 1 on a shadowed translation
 uv run thesis-translate format paper_ko.txt
 uv run thesis-translate dual paper_en.txt paper_ko.txt
 ```
