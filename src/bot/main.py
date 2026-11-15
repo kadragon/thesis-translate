@@ -112,7 +112,7 @@ class Client(Protocol):
     def send_message(self, chat_id: int, text: str) -> None: ...
 
 
-def poll_once(  # noqa: PLR0913 - glossary wiring is optional
+def poll_once(  # noqa: PLR0913, PLR0917 - glossary wiring is optional
     client: Client,
     allowed: AbstractSet[int],
     intake: Acceptor,
