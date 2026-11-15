@@ -9,8 +9,8 @@ requires-python = ">=3.12"
 description = "Extract academic papers from PDF and verify Claude translations."
 dependencies = [
     "rich",
-    "pre-commit==4.5.1",
-    "ruff==0.15.8",
+    "pre-commit==4.7.0",
+    "ruff==0.17.4",
 ]
 
 [project.scripts]
