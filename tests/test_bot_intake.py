@@ -48,7 +48,7 @@ def _job(stem="paper", job_id="j1"):
     )
 
 
-def _intake(  # noqa: PLR0913 - test helper defaults
+def _intake(  # noqa: PLR0913, PLR0917 - test helper defaults
     tmp_path,
     downloader=None,
     queue=None,

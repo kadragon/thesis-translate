@@ -59,6 +59,8 @@ Updates (newest first, keep ~5).
 
 ## Updates
 
+- 2026-11-15: `terms-check FILE...` lists entries `load_terms` drops (same term, case-insensitive):
+  a different translation is a conflict (exit 1), the same one a duplicate (INFO). Read-only.
 - 2026-11-12: Transient `getUpdates` failures (network errors, 5xx) log at INFO; WARNING from the
   3rd in a row, or at once for a 4xx.
 - 2026-11-12: Non-isolated (non-root) jobs also get a per-job `glossary.json` snapshot taken
@@ -68,5 +70,3 @@ Updates (newest first, keep ~5).
 - 2026-11-10: Allowlisted chats edit `glossary.json` over Telegram: `term → 번역어` lines
   add (existing terms skipped), `/glossary` lists, `/update` changes, `/delete` removes.
   Compose bind-mounts the host's `glossary.json`.
-- 2026-11-10: Intake sends one reply with page count and an estimated time; the runner's
-  start notice goes only to jobs that waited in the queue.

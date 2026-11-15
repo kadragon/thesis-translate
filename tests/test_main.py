@@ -310,3 +310,90 @@ def test_extract_warns_and_continues_on_malformed_glossary(tmp_path, caplog):
         assert main(["extract", "paper.pdf", "-o", str(out)]) == 0
     assert "용어 파일 오류" in caplog.text
     assert "A longterm study." in out.read_text(encoding="utf-8")
+
+
+def _term_files(tmp_path, monkeypatch, paper_translation):
+    monkeypatch.chdir(tmp_path)
+    _write(
+        tmp_path / "glossary.json",
+        '[{"term": "unlearning", "translation": "언러닝"},'
+        ' {"term": "habit", "translation": "습관"}]',
+    )
+    _write(
+        tmp_path / "paper_terms.json",
+        f'[{{"term": "Unlearning", "translation": "{paper_translation}"}},'
+        ' {"term": "habit", "translation": "습관"}]',
+    )
+    return ["glossary.json", "paper_terms.json"]
+
+
+def test_terms_check_reports_conflict_and_fails(tmp_path, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    files = _term_files(tmp_path, monkeypatch, "탈학습")
+    before = [(tmp_path / f).read_bytes() for f in files]
+
+    with patch("src.main.configure_logging"):
+        assert main(["terms-check", *files]) == 1
+    assert (
+        "용어 충돌: unlearning → 언러닝 (glossary.json #1) 채택,"
+        " Unlearning → 탈학습 (paper_terms.json #1) 가려짐"
+    ) in caplog.text
+    assert "같은 번역어 중복: habit → 습관 (paper_terms.json #2)" in caplog.text
+    assert [(tmp_path / f).read_bytes() for f in files] == before
+
+
+def test_terms_check_passes_with_only_duplicates(tmp_path, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    files = _term_files(tmp_path, monkeypatch, "언러닝")
+
+    with patch("src.main.configure_logging"):
+        assert main(["terms-check", *files]) == 0
+    assert "용어 충돌" not in caplog.text
+    assert "같은 번역어 중복: Unlearning → 언러닝" in caplog.text
+
+
+def test_terms_check_fails_on_malformed_file(tmp_path, caplog):
+    bad = _write(tmp_path / "g.json", '{"not": "a list"}')
+
+    with patch("src.main.configure_logging"):
+        assert main(["terms-check", bad]) == 1
+    assert "용어 파일 오류" in caplog.text
+
+
+def test_terms_check_fails_on_missing_named_file(tmp_path, caplog):
+    gloss = _write(tmp_path / "g.json", '[{"term": "a", "translation": "가"}]')
+
+    with patch("src.main.configure_logging"):
+        assert main(["terms-check", gloss, str(tmp_path / "typo.json")]) == 1
+    assert "typo.json" in caplog.text
+
+
+def test_terms_check_names_file_with_invalid_json(tmp_path, caplog):
+    bad = _write(tmp_path / "paper_terms.json", '[{"term": "a",}]')
+
+    with patch("src.main.configure_logging"):
+        assert main(["terms-check", bad]) == 1
+    assert "paper_terms.json" in caplog.text
+
+
+def test_terms_check_ignores_repeated_path(tmp_path, monkeypatch, caplog):
+    files = _term_files(tmp_path, monkeypatch, "언러닝")
+    caplog.set_level(logging.INFO)
+
+    with patch("src.main.configure_logging"):
+        assert main(["terms-check", *files, "./glossary.json"]) == 0
+    assert "같은 번역어 중복 2건" in caplog.text
+
+
+def test_terms_check_reports_unreadable_file(tmp_path, caplog):
+    gloss = _write(tmp_path / "g.json", "[]")
+
+    with (
+        patch("src.main.configure_logging"),
+        patch(
+            "src.core.alignment.Path.read_text",
+            side_effect=PermissionError(13, "denied"),
+        ),
+    ):
+        assert main(["terms-check", gloss]) == 1
+    assert "용어 파일 오류" in caplog.text

@@ -41,7 +41,7 @@ def _is_pdf(document: dict[str, Any]) -> bool:
     return document.get("mime_type") == PDF_MIME or name.lower().endswith(".pdf")
 
 
-def handle_update(  # noqa: PLR0913 - glossary wiring is optional
+def handle_update(  # noqa: PLR0913, PLR0917 - glossary wiring is optional
     update: dict[str, Any],
     allowed: AbstractSet[int],
     client: Sender,
