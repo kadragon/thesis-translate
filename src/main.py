@@ -140,13 +140,20 @@ def _entry(entry: TermEntry) -> str:
 
 
 def _terms_check(args: argparse.Namespace) -> int:
-    paths = [Path(path) for path in args.files]
-    for path in paths:
+    paths: list[Path] = []
+    seen: set[Path] = set()
+    for path in map(Path, args.files):
         if not path.is_file():
-            logger.warning("용어 파일 없음(건너뜀): %s", path)
+            logger.error("용어 파일 없음: %s", path)
+            return 1
+        if path.resolve() in seen:
+            logger.warning("같은 파일을 다시 지정해 건너뜀: %s", path)
+            continue
+        seen.add(path.resolve())
+        paths.append(path)
     try:
         shadows = find_term_shadows(paths)
-    except ValueError as exc:
+    except (ValueError, OSError) as exc:
         logger.error("용어 파일 오류: %s", exc)  # noqa: TRY400
         return 1
     conflicts = [s for s in shadows if s["kind"] == "conflict"]

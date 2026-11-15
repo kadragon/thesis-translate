@@ -173,7 +173,11 @@ def _read_term_file(path: Path) -> list[dict[str, str]]:
     """Return a term file's entries: ``[]`` if missing, ``ValueError`` if malformed."""
     if not path.is_file():
         return []
-    data = json.loads(path.read_text(encoding="utf-8"))
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        msg = f"{path}: {exc}"
+        raise ValueError(msg) from exc
     if not isinstance(data, list) or not all(
         isinstance(entry, dict)
         and isinstance(entry.get("term"), str)
