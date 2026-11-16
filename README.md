@@ -30,9 +30,10 @@ uv run thesis-translate extract paper.pdf --start-page 174   # → paper_en.txt
 uv run thesis-translate verify paper_en.txt paper_ko.txt     # 구조 비교, 미번역 문단 경고
 uv run thesis-translate format paper_ko.txt                  # 들여쓰기
 uv run thesis-translate terms-check glossary.json paper_terms.json  # 가려지는 번역어 확인
+uv run thesis-translate terms-check --source paper_en.txt  # verify와 같은 용어 파일 확인
 ```
 
-`--start-page`에는 논문에 인쇄된 첫 페이지 번호를 넣습니다. 표지가 붙은 PDF는 `--first-pdf-page 2`로 건너뜁니다. 이미 있는 `_en.txt`는 `--force` 없이 덮어쓰지 않습니다. `verify`는 구조가 다르면 해당 페이지를 출력하고 종료 코드 1을 반환합니다. `terms-check`는 앞쪽 용어 파일이 채택되는 병합 규칙에 따라, 같은 용어에 다른 번역어가 있어 가려지는 항목을 파일명·항목 번호와 함께 보여 주고 종료 코드 1을 반환합니다. 번역어까지 같은 중복은 알림만 합니다. 지정한 파일이 없거나 형식이 틀려도 종료 코드 1입니다. 파일은 수정하지 않습니다.
+`--start-page`에는 논문에 인쇄된 첫 페이지 번호를 넣습니다. 표지가 붙은 PDF는 `--first-pdf-page 2`로 건너뜁니다. 이미 있는 `_en.txt`는 `--force` 없이 덮어쓰지 않습니다. `verify`는 구조가 다르면 해당 페이지를 출력하고 종료 코드 1을 반환합니다. `terms-check`는 앞쪽 용어 파일이 채택되는 병합 규칙에 따라, 같은 용어에 다른 번역어가 있어 가려지는 항목을 파일명·항목 번호와 함께 보여 주고 종료 코드 1을 반환합니다. 번역어까지 같은 중복은 알림만 합니다. 파일을 지정하지 않으면 `verify`와 같은 용어 파일을 봅니다. `--source`를 주면 `glossary.json`과 `<PDF 이름>_terms.json`을, 주지 않으면 `glossary.json`만 검사하며 없는 기본 파일은 건너뜁니다. `--source`로 준 원문 파일이 없으면 종료 코드 1입니다. 직접 지정한 파일이 없거나 형식이 틀리면 종료 코드 1입니다. 파일은 수정하지 않습니다.
 
 ## 라이선스
 
