@@ -59,6 +59,8 @@ Updates (newest first, keep ~5).
 
 ## Updates
 
+- 2026-11-16: `terms-check` with no files checks verify's term files: `--source SRC` adds
+  `<stem>_terms.json` to the glossary (`THESIS_TRANSLATE_GLOSSARY` honored); missing defaults skipped.
 - 2026-11-15: `terms-check FILE...` lists entries `load_terms` drops (same term, case-insensitive):
   a different translation is a conflict (exit 1), the same one a duplicate (INFO). Read-only.
 - 2026-11-12: Transient `getUpdates` failures (network errors, 5xx) log at INFO; WARNING from the
@@ -67,6 +69,3 @@ Updates (newest first, keep ~5).
   under `Glossary.lock`; `THESIS_TRANSLATE_GLOSSARY` points claude and `verify` at it.
 - 2026-11-11: Glossary commands addressed to another bot (`/cmd@other`) are dropped; jobs
   get a locked snapshot of `glossary.json` instead of a link to the live file.
-- 2026-11-10: Allowlisted chats edit `glossary.json` over Telegram: `term → 번역어` lines
-  add (existing terms skipped), `/glossary` lists, `/update` changes, `/delete` removes.
-  Compose bind-mounts the host's `glossary.json`.

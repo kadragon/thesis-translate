@@ -140,10 +140,20 @@ def _entry(entry: TermEntry) -> str:
 
 
 def _terms_check(args: argparse.Namespace) -> int:
+    # No files: verify's default list; a missing default is skipped, as there.
+    named = bool(args.files)
+    candidates = (
+        [Path(path) for path in args.files]
+        if named
+        else [_glossary()]
+        + ([_sibling(args.source, "_terms.json")] if args.source else [])
+    )
     paths: list[Path] = []
     seen: set[Path] = set()
-    for path in map(Path, args.files):
+    for path in candidates:
         if not path.is_file():
+            if not named:
+                continue
             logger.error("용어 파일 없음: %s", path)
             return 1
         if path.resolve() in seen:
@@ -231,8 +241,16 @@ def _parser() -> argparse.ArgumentParser:
     terms_check = sub.add_parser(
         "terms-check", help="용어 파일 사이에서 가려지는 번역어 확인"
     )
-    terms_check.add_argument(
-        "files", nargs="+", help="우선순위 순서의 용어 파일(앞쪽이 채택됨)"
+    terms_files = terms_check.add_mutually_exclusive_group()
+    terms_files.add_argument(
+        "files",
+        nargs="*",
+        default=[],
+        help="우선순위 순서의 용어 파일(앞쪽이 채택됨). 기본값: glossary.json",
+    )
+    terms_files.add_argument(
+        "--source",
+        help="원문 파일. verify처럼 glossary.json, <PDF 이름>_terms.json 검사",
     )
     terms_check.set_defaults(handler=_terms_check)
 
