@@ -402,6 +402,7 @@ def test_terms_check_reports_unreadable_file(tmp_path, caplog):
 def test_terms_check_source_uses_verify_paths(tmp_path, monkeypatch, caplog):
     _term_files(tmp_path, monkeypatch, "탈학습")
     monkeypatch.delenv("THESIS_TRANSLATE_GLOSSARY", raising=False)
+    _write(tmp_path / "paper_en.txt", "")
 
     with (
         patch("src.main.PROJECT_ROOT", tmp_path),
@@ -428,9 +429,10 @@ def test_terms_check_source_skips_missing_paper_terms(tmp_path, monkeypatch, cap
     caplog.set_level(logging.INFO)
     gloss = _write(tmp_path / "g.json", '[{"term": "a", "translation": "가"}]')
     monkeypatch.setenv("THESIS_TRANSLATE_GLOSSARY", gloss)
+    source = _write(tmp_path / "paper_en.txt", "")
 
     with patch("src.main.configure_logging"):
-        code = main(["terms-check", "--source", str(tmp_path / "paper_en.txt")])
+        code = main(["terms-check", "--source", source])
     assert code == 0
     assert "충돌 0건" in caplog.text
 
@@ -444,3 +446,22 @@ def test_terms_check_rejects_files_with_source(tmp_path):
     with patch("src.main.configure_logging"), pytest.raises(SystemExit) as exc:
         main(["terms-check", gloss, "--source", "paper_en.txt"])
     assert exc.value.code == ARGPARSE_USAGE_ERROR
+
+
+def test_terms_check_fails_on_missing_source(tmp_path, monkeypatch, caplog):
+    gloss = _write(tmp_path / "g.json", "[]")
+    monkeypatch.setenv("THESIS_TRANSLATE_GLOSSARY", gloss)
+
+    with patch("src.main.configure_logging"):
+        assert main(["terms-check", "--source", str(tmp_path / "papr_en.txt")]) == 1
+    assert "papr_en.txt" in caplog.text
+
+
+def test_terms_check_names_skipped_defaults(tmp_path, monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+    monkeypatch.setenv("THESIS_TRANSLATE_GLOSSARY", str(tmp_path / "gone.json"))
+
+    with patch("src.main.configure_logging"):
+        assert main(["terms-check"]) == 0
+    assert "gone.json" in caplog.text
+    assert "검사할 용어 파일이 없습니다" in caplog.text

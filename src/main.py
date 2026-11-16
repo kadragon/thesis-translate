@@ -142,6 +142,9 @@ def _entry(entry: TermEntry) -> str:
 def _terms_check(args: argparse.Namespace) -> int:
     # No files: verify's default list; a missing default is skipped, as there.
     named = bool(args.files)
+    if args.source and not Path(args.source).is_file():
+        logger.error("원문 파일 없음: %s", args.source)
+        return 1
     candidates = (
         [Path(path) for path in args.files]
         if named
@@ -153,6 +156,7 @@ def _terms_check(args: argparse.Namespace) -> int:
     for path in candidates:
         if not path.is_file():
             if not named:
+                logger.info("용어 파일 없음(건너뜀): %s", path)
                 continue
             logger.error("용어 파일 없음: %s", path)
             return 1
@@ -161,6 +165,8 @@ def _terms_check(args: argparse.Namespace) -> int:
             continue
         seen.add(path.resolve())
         paths.append(path)
+    if not paths:
+        logger.warning("검사할 용어 파일이 없습니다.")
     try:
         shadows = find_term_shadows(paths)
     except (ValueError, OSError) as exc:
