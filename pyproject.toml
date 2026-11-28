@@ -10,7 +10,7 @@ description = "Extract academic papers from PDF and verify Claude translations."
 dependencies = [
     "rich",
     "pre-commit==4.7.0",
-    "ruff==0.17.5",
+    "ruff==0.17.6",
 ]
 
 [project.scripts]
